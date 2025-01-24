@@ -58,10 +58,16 @@ def list_and_delete_cue_points(client, entry_ids, cue_point_type):
             response = client.cuePoint.cuePoint.list(cue_filter)
             cue_points = response.objects or []
             
-            print(f"Debug: Response received for entry {entry_id} - {len(cue_points)} cue points found.")
+            print(
+                f"Debug: Response received for entry {entry_id} - "
+                f"{len(cue_points)} cue points found."
+                )
 
             if cue_points:
-                confirm = input(f"{len(cue_points)} cue points of type {cue_point_type} found. Delete them? (Y/N): ").strip().lower()
+                confirm = input(
+                    f"{len(cue_points)} cue points of type {cue_point_type} "
+                    f"found. Delete them? (Y/N): "
+                    ).strip().lower()
                 if confirm != 'y':
                     print("Skipping deletion for this entry.")
                     continue
@@ -85,8 +91,12 @@ def main():
     client = get_kaltura_client()
 
     # Step 1: Prompt for entry IDs
-    entry_ids_input = input("Please enter a comma-delimited list of entry IDs: ")
-    entry_ids = [eid.strip() for eid in entry_ids_input.split(',') if eid.strip()]
+    entry_ids_input = input(
+        "Please enter a comma-delimited list of entry IDs: "
+        )
+    entry_ids = [
+        eid.strip() for eid in entry_ids_input.split(',') if eid.strip()
+        ]
 
     if not entry_ids:
         print("No valid entry IDs provided. Exiting.")
@@ -104,7 +114,9 @@ def main():
         print(f"[{key}] {name}")
 
     try:
-        choice = int(input("Enter the number corresponding to the cue point type: "))
+        choice = int(
+            input("Enter the number corresponding to the cue point type: ")
+            )
         if choice not in cue_point_types:
             print("Invalid choice. Exiting.")
             return
@@ -116,7 +128,9 @@ def main():
 
     # Step 3: Delete cue points
     print(f"Deleting {cue_point_types[choice][0]} from specified entries...")
-    deleted_count = list_and_delete_cue_points(client, entry_ids, selected_type)
+    deleted_count = list_and_delete_cue_points(
+        client, entry_ids, selected_type
+        )
 
     # Step 4: Display results
     print(f"Total {cue_point_types[choice][0]} deleted: {deleted_count}")
