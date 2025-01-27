@@ -37,5 +37,7 @@ HOW TO ACTIVATE A VIRTUAL ENVIRONMENT (do this every time you want to run script
 
 Once you've activated the virtual environment, you'll need to install the modules that the script needs in order to run. 
 
+Note that once you start using pip to install modules, you may be prompted to upgrade it, which I'd recommend. 
+
 -- Galen Davis, Senior Ed Tech Specialist, UC San Diego
 27 January 2025
