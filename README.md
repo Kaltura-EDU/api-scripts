@@ -13,9 +13,9 @@ HOW TO CREATE A VIRTUAL ENVIRONMENT (one-time instructions)
   1. Open Terminal (Mac) or Command Prompt (Windows) and navigate to the folder in question (e.g. cd /path/to/project).
   2. Type 
 
-python3 -m venv venv
+    python3 -m venv venv
      
-     Note that this assumes you’re running the latest version of Python. If not, just use “python” instead of “python3”.
+  Note that this assumes you’re running the latest version of Python. If not, just use “python” instead of “python3”.
 
 So why should you do this? When you run a Python script, sometimes you have to install "modules" on your computer that allow you to do certain types of things. For example, for all of the scripts on this site, you'll almost certainly have to have "KalturaApiClient" installed. It's good to install these modules within your virtual environment because there's a risk that certain functions or API actions might have the same name in multiple modules (but do different things). Having a virtual environment isolates the scripts' dependencies. 
 
@@ -27,8 +27,13 @@ HOW TO ACTIVATE A VIRTUAL ENVIRONMENT (do this every time you want to run script
 
   1. Open Terminal (Mac) or Command Prompt (Windows) and navigate to the folder in question (e.g. cd /path/to/project).
   2. Now actiavate the virtual environment:
-       Windows: venv\\Scripts\\activate
-       Mac: source venv/bin/activate
+       Windows:
+
+         venv\\Scripts\\activate
+
+     Mac:
+
+         source venv/bin/activate
 
 Once you've activated the virtual environment, you'll need to install the modules that the script needs in order to run. 
 
