@@ -1,0 +1,33 @@
+Kaltura Batch Delete Video Quiz Attempts
+----------------------------------------
+A python script for deleting in-video-quiz (IVQ) attempts in kaltura.
+
+Description
+-----------
+This script was created based on the need to delete a large number of IVQ attempts for multiple video quizzes and multiple users. Use case: a Canvas course utilizes 49 graded video quizzes. This course is taken by a large number of students. Each semester, some students are re-taking the course. Since the same video quizzes are used each semester, Kaltura has stored the quiz user statistics and scores in Kaltura. The quiz and associated Canvas assignment are configured to allow multiple attempts (essentially unlimited attempts) and keep the highest score. That score is also sent to the Canvas gradebook. In most cases, the score will not sync to the new semester course in Canvas. To resolve this, teachers have been manually deleting quiz attempts in the Kaltura GUI, but this is a tedious process deleting quiz attempts for ~10 users across 50 video quizzes. This script allows you to submit a list of user IDs and a list of Kaltura entry IDs, and all quiz attempt IDs for those will be collected and deleted.
+
+Dependencies
+------------
+Python - If using Windows, recommend installing from https://www.python.org/downloads/ and once installed execute from PowerShell 7. Include pip when installing.
+tqdm - pip install pqdm - used to generate progress bars.
+colorama - pip install colorama - Makes ANSI escape character sequences (for producing colored terminal text and cursor positioning) work under MS Windows.
+
+Executing Script
+----------------
+py '.\batch-delete-quiz-attempts v2.py'
+
+1. The script will prompt for your authentication token (ks). Copy and paste your authentication token. See below for more information.
+2. The script will prompt for your user ID file. 1 User ID per row, no commas. Save this .txt file in the same folder as the script. i.e. User_ID.txt. This file contains a list of all user IDs that may have quiz attempts. Not all users have to have quiz attempts for every entry ID.
+3. The script will prompt for your entry ID file. 1 entry ID per row, no commas. Save this .txt file in the same folder as the script. i.e. Entry_ID.txt. This file contains a list of all Kaltura entry IDs for the quizzes. Make sure you have selected the quiz entry and not the video entry.
+4. The script will prompt for an output file. The output file is just used for logging. You can refer to it for status and errors after running the script. Call it whatever you want. i.e. output.txt
+5. The script will retreive quiz attempt IDs (if any) for all users per each entry ID. For example, you have 5 users in your list, and 2 entry IDs in your list. The script will look at entry ID 1, and find quiz attempts for user 1, 2, 3, 4, 5. Then it will move to entry ID 2, and find attempts for user 1, 2, 3, 4, 5, etc. 
+6. Once all quiz attempt IDs have been retreived and added to an array, you will be prompted 'yes/no' to confirm deletion. 
+If 'yes', all quiz attempt IDs in the array will be deleted. 
+
+Kaltura Authentication Token
+----------------------------
+You can use the Kaltura API online consoles to start a session and generate an authentication token. The consoles are available here:
+https://developer.kaltura.com/console (includes more documentation)
+https://www.kaltura.com/api_v3/testme/ (straightforward)
+
+You can write your API script to 'start' a session and 'end' a session. Ending a session will expire the authentication token. Tokens are valid for 24 hours by default. For now, I prefer to generate my token ahead of time, prompt for it in the script, and use it repeatedly for a period of time.
