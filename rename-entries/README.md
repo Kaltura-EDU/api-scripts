@@ -1,7 +1,7 @@
 # Description
 This script allows you to rename Kaltura media entries in batches. You can add something to the entries' titles at the beginning or at the end (a prefix or a suffix). You can select what entries you'd like to rename by using one of the following:
 
-- tags
+- a tag
 - a category
 - a comma-delimited list of entry IDs
 
