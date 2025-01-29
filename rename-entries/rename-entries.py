@@ -6,6 +6,8 @@ Usage:
 - Replace the value of "partner_id" and "admin_secret" with your own
 instance's credentials.
 - At a command prompt, type "python3 rename-entries.py". 
+
+Required modules: KalturaApiClient, lxml
 """
 
 import sys
