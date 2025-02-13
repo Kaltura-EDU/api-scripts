@@ -55,3 +55,7 @@ I've attempted to account for a variety of use cases, but I may have missed some
 This approach generally works well, but be aware that certain transcoding profiles might result in a flavor that is larger than the original source file, which could affect the copy. Just something to keep in mind!
 - **Children may process more slowly than their parents.** If you’re copying a multistream entry (e.g., a dual-stream recording), be aware that child entries (such as a 1080p webcam video) may take longer to process than the parent entry (e.g., a static screen share). While the script correctly duplicates both parent and child entries, they may not become "ready" on the front end at the same time. (So if you log into the destination front end and only see the parent stream, you may just need to wait longer.) You can confirm successful copying by running a `baseEntry.list` API call with `parentEntryIdEqual` set to the new parent entry’s ID. Be patient! 
 - **If downloads have been enabled for the source entry, this won't be the case for the destination entry.** If a user has gone to the "downloads" tab and offered up flavors for front-end viewers to download, this won't be replicated in the destination. I haven't figured this one out yet!
+
+Galen Davis, Senior Education Technology Specialist (gbdavis@ucsd.edu)
+UC San Diego
+13 Feburary 2025
