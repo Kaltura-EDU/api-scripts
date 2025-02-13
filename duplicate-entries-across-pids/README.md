@@ -11,7 +11,7 @@ I've attempted to account for a variety of use cases, but I may have missed some
 - "normal" video entries
 - quizzes
 - chapters
-- thumbmnails
+- thumbnails
 - hotspots
 - audio-only entries
 - multi-stream entries
