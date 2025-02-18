@@ -26,8 +26,9 @@ I've attempted to account for a variety of use cases, but I may have missed some
 2. Set values for any configurable variables (described in more detail below).
 3. Create and/or activate your virtual environment. You can find [instructions on this](https://github.com/Kaltura-EDU/api-scripts) in the main Readme in this github site.
 4. Open a command line application (e.g. Command Prompt or Terminal) and navigate to the folder.
-5. Type `python3 duplicate-entries-across-pids.py`
-6. Follow the onscreen prompts.
+5. Type `pip install -r requirements.txt` and allow the script to install the needed modules into your virtual environment.
+6. Type `python3 duplicate-entries-across-pids.py`
+7. Follow the onscreen prompts.
 
 # Configurable Variables
 
