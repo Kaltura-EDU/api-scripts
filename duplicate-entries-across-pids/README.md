@@ -20,6 +20,11 @@ I've attempted to account for a variety of use cases, but I may have missed some
 - ASR transcripts (technically a type of attachment)
 - images
 
+# How to Run This Script
+
+1. Download the Python file (duplicate-entries-across-pids.py) to your computer, ideally in a folder to which it's easy to navigate.
+2. 
+
 # Configurable Variables
 
 - **COPY_QUIZ_ANSWERS** (Default: False)
