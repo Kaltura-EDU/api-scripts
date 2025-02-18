@@ -36,7 +36,7 @@ I've attempted to account for a variety of use cases, but I may have missed some
   - Set to True if "quiz answer" cue points should be copied to the new instance; False to exclude them. (See the note below for more information.)
 - **COPY_ASR_CAPTIONS** (Default: False)
   - Set to True to copy auto-generated captions to the destination entry as well as the transcript and accompanying .json file (which are treated as "attachments"). Leave as False to skip ASR captions.
-  - Depends on the value of `CAPTION_LABEL`.
+  - If you set it to False, be sure to update the value of `CAPTION_LABEL` so the script knows what caption label to look out for (and *not* copy over).
 - **CAPTION_LABEL** (Default: "English: auto-generated)")
   - If you intend to exclude ASR captions from the entry duplication (i.e. `COPY_ASR_CAPTIONS = False`), ensure that the value of this variable matches the label for your ASR captions.
 - **COPY_ATTACHMENTS** (Default: True)
