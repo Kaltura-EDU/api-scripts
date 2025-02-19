@@ -1,5 +1,5 @@
 # Description
-This script allows you to download all caption assets from a Kaltura media entry. You can select the entries using a tag, a category ID, or a comma-delimited list of entry IDs. The filenames take this format: creation date, entry ID, entry title, and lastly the caption label. E.g.
+This script allows you to download all caption assets from one or more Kaltura media entries. You can select the entries using a tag, a category ID, or a comma-delimited list of entry IDs. The filenames take this format: creation date, entry ID, entry title, and lastly the caption label. E.g.
 ```
 2024-05-22_1_xuw9zvsc_XSE1_5B_Axial_Compression__English.srt
 2024-05-22_1_xuw9zvsc_XSE1_5B_Axial_Compression__Spanish.srt
