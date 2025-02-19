@@ -1,6 +1,9 @@
 '''
 This script downloads all caption files for entries based on user input of
 either a tag, a category ID, or a comma-delimited list of entry IDs.
+
+Be sure to insert your partner ID and admin secret to the variable values
+below.
 '''
 
 import os
