@@ -6,7 +6,7 @@ This script allows you to rename Kaltura media entries in batches. You can add s
 - a comma-delimited list of entry IDs
 
 # One-Time Instructions
-1. Download **rename-entries.py** and **Requirements.txt** to your computer.
+1. Download **rename-entries.py** and **requirements.txt** to your computer.
 2. Open **rename-entries.py** with a text editor.
 3. Add values for `partner_id` and `admin_secret` based on your own instance of Kaltura.
 4. Save the changes.
