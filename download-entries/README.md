@@ -7,7 +7,7 @@ The script is currently set up to download files serially. I did this to avoid t
 
 
 # Caveat
-I ran into some issues with the script hanging at certain points. I was at home (I work remotely), but once I connected to my institution's VPN, downloads did just fine with no hanging. It may be the case that your ISP doens't like you running too many API calls that download data!
+I ran into some issues with the script hanging at certain points. I was at home (I work remotely), but once I connected to my institution's VPN, downloads did just fine with no hanging. It may be the case that your ISP doesn't like you running too many API calls that download data!
 
 # How to Run the Script
 1. Download **download-entries.py** and **requirements.txt** to your computer. Ensure they end up in the same folder.
