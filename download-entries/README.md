@@ -16,10 +16,15 @@ I ran into some issues with the script hanging at certain points. I was at home 
 4. Save the changes.
 5. Open a command line interface, such as Terminal on a Mac or Command Prompt in Windows.
 6. Navigate to wherever you put your files (e.g. `cd /path/to/project`).
-7. Set up a virtual environment if you haven't already: `python3 -m venv venv`
-8. Activate your virtual environment (Windows: `venv\\Scripts\\activate` Mac: `source venv/bin/activate`)
-9. Install the needed modules: `pip install -r requirements.txt`
-10. Run the script: `python3 download-entries.py`
+7. Set up a virtual environment if you haven't already:  
+`python3 -m venv venv`
+8. Activate your virtual environment  
+Windows: `venv\\Scripts\\activate`  
+Mac: `source venv/bin/activate`
+9. Install the needed modules:  
+`pip install -r requirements.txt`
+10. Run the script:  
+`python3 download-entries.py`
 
 
 Galen Davis, Senior Education Technology Specialist  
