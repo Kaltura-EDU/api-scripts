@@ -1,16 +1,16 @@
 '''
 Downloads source files from entries into a subfolder "kaltura_downloads" based
-on a tag, category ID, or comma-delimited list of entry IDs. You can change
-the name of the folder if desired with one of the global variables.
+on a tag, category ID, comma-delimited list of entry IDs, or owner's user ID.
+You can change the name of the folder if desired with one of the global
+variables.
 
-Be sure to provide your partner ID and admin secret below before attempting to
-run the script.
+Be sure to provide your partner ID and admin secret as the value of the global
+variables below before attempting to run the script.
 '''
 
 import os
 import time
 import requests
-import threading
 from urllib.parse import urlparse
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
@@ -23,7 +23,6 @@ from KalturaClient.exceptions import KalturaException
 PARTNER_ID = ""
 ADMIN_SECRET = ""
 DOWNLOAD_FOLDER = "kaltura_downloads"
-MAX_SIMULTANEOUS_DOWNLOADS = 6  # Adjust based on observed Kaltura limits
 RETRY_ATTEMPTS = 3
 # -- END CONFIGURABLE VARIABLES --
 
@@ -58,23 +57,34 @@ def get_entry_details(client, entry_id):
 def get_entries(client, method, identifier):
     entries = []
     entry_filter = KalturaBaseEntryFilter()
+    pager = KalturaFilterPager()
+    pager.pageSize = 100  # Fetch up to 100 entries per request
+    pager.pageIndex = 1  # Start at the first page
+
     if method == "tag":
         entry_filter.tagsLike = identifier
     elif method == "category":
         entry_filter.categoriesIdsMatchOr = identifier
     elif method == "entry_ids":
         entry_filter.idIn = identifier
+    elif method == "owner_id":
+        entry_filter.userIdEqual = identifier
     else:
         print("Invalid method selection.")
         return []
 
-    pager = KalturaFilterPager()
     try:
-        result = client.baseEntry.list(entry_filter, pager)
-        if result.objects:
+        while True:
+            result = client.baseEntry.list(entry_filter, pager)
+            if not result.objects:
+                break  # Stop if no more entries are returned
+
             entries.extend(result.objects)
+            pager.pageIndex += 1  # Move to the next page
+
     except KalturaException as e:
         print(f"Error retrieving entries: {e}")
+
     return entries
 
 
@@ -195,6 +205,32 @@ def worker(queue, client):
         time.sleep(1)  # Prevent overwhelming the server
 
 
+def process_entry(client, entry):
+    """Processes a single entry: gets download URL and saves the file."""
+    url = get_download_url(client, entry)
+    if url:
+        filename = get_file_name(url)
+        download_file(url, filename)
+    else:
+        print(
+            f"⚠️ Skipping {entry.id} ({entry.name}): "
+            f"No valid download URL found."
+            )
+
+    # Process child entries, if any
+    children = get_child_entries(client, entry.id)
+    for child in children:
+        child_url = get_download_url(client, child)
+        if child_url:
+            child_filename = get_file_name(child_url)
+            download_file(child_url, child_filename)
+        else:
+            print(
+                f"⚠️ Skipping child entry {child.id} ({child.name}): "
+                f"No valid download URL found."
+                )
+
+
 def main():
     client = get_kaltura_client(PARTNER_ID, ADMIN_SECRET)
 
@@ -202,14 +238,17 @@ def main():
     print("[1] A tag")
     print("[2] A category ID")
     print("[3] A comma-delimited list of entry IDs")
+    print("[4] An owner's user ID")
 
     method_choice = input(
         "Enter the number corresponding to your choice: "
         ).strip()
-    method_mapping = {"1": "tag", "2": "category", "3": "entry_ids"}
+    method_mapping = {
+        "1": "tag", "2": "category", "3": "entry_ids", "4": "owner_id"
+        }
 
     if method_choice not in method_mapping:
-        print("Error: Invalid choice. Please enter 1, 2, or 3.")
+        print("Error: Invalid choice. Please enter 1, 2, 3, or 4.")
         return
 
     method = method_mapping[method_choice]
@@ -225,16 +264,9 @@ def main():
 
     print(f"Found {len(entries)} entries. Starting downloads...")
 
-    queue = entries[:]
-    threads = []
-
-    for _ in range(min(MAX_SIMULTANEOUS_DOWNLOADS, len(entries))):
-        thread = threading.Thread(target=worker, args=(queue, client))
-        thread.start()
-        threads.append(thread)
-
-    for thread in threads:
-        thread.join()
+    # Process one entry at a time (no threading)
+    for entry in entries:
+        process_entry(client, entry)
 
     print("✅ All downloads complete!")
 
