@@ -6,6 +6,9 @@ You're able to change the name of the download folder if you wish, but the defau
 The script is currently set up to max out with 6 simultaneous downloads. I did this as a precaution since that was the behavior I observed with the KMC (i.e. I'm only able to download 6 things at a time). However, I did notice that when using the API to download, I was receiving full gigabit speeds (which is the maximum of what I can get at home). 
 
 
+# Caveat
+I ran into some issues with the script hanging at certain points. I was at home (I work remotely), but once I connected to my institution's VPN, downloads did just fine with no hanging. It may be the case that your ISP doens't like you running too many API calls that download data!
+
 # How to Run the Script
 1. Download **download-entries.py** and **requirements.txt** to your computer. Ensure they end up in the same folder.
 2. Open **download-entries.py** with a text editor.
@@ -19,6 +22,6 @@ The script is currently set up to max out with 6 simultaneous downloads. I did t
 10. Run the script: `python3 download-entries.py`
 
 
-Galen Davis, Senior Education Technology Specialist
-UC San Diego
-24 February 2025
+Galen Davis, Senior Education Technology Specialist  
+UC San Diego  
+24 February 2025  
