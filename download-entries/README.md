@@ -1,9 +1,9 @@
 # Description
-This script allows you to download source files from entries based on a tag, a category ID, or a comma-delimited list of entry IDs. 
+This script allows you to download source files from entries based on a tag, a category ID, a comma-delimited list of entry IDs, or an owner's user ID. 
 
 You're able to change the name of the download folder if you wish, but the default is "kaltura_downloads". It will be created in the folder where you keep download-entries.py.
 
-The script is currently set up to max out with 6 simultaneous downloads. I did this as a precaution since that was the behavior I observed with the KMC (i.e. I'm only able to download 6 things at a time). However, I did notice that when using the API to download, I was receiving full gigabit speeds (which is the maximum of what I can get at home). 
+The script is currently set up to download files serially. I did this to avoid the complexity of trying to "thread" or queue downloads (which creates its own set of headaches). 
 
 
 # Caveat
