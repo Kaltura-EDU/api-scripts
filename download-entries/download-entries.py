@@ -58,13 +58,13 @@ def get_entries(client, method, identifier):
     entries = []
     entry_filter = KalturaBaseEntryFilter()
     pager = KalturaFilterPager()
-    pager.pageSize = 100  # Fetch up to 100 entries per request
-    pager.pageIndex = 1  # Start at the first page
+    pager.pageSize = 100
+    pager.pageIndex = 1
 
     if method == "tag":
         entry_filter.tagsLike = identifier
     elif method == "category":
-        entry_filter.categoriesIdsMatchOr = identifier
+        entry_filter.categoryAncestorIdIn = identifier
     elif method == "entry_ids":
         entry_filter.idIn = identifier
     elif method == "owner_id":
@@ -77,11 +77,9 @@ def get_entries(client, method, identifier):
         while True:
             result = client.baseEntry.list(entry_filter, pager)
             if not result.objects:
-                break  # Stop if no more entries are returned
-
+                break
             entries.extend(result.objects)
-            pager.pageIndex += 1  # Move to the next page
-
+            pager.pageIndex += 1
     except KalturaException as e:
         print(f"Error retrieving entries: {e}")
 
@@ -205,17 +203,18 @@ def worker(queue, client):
         time.sleep(1)  # Prevent overwhelming the server
 
 
-def process_entry(client, entry):
+def process_entry(client, entry, index):
     """Processes a single entry: gets download URL and saves the file."""
     url = get_download_url(client, entry)
     if url:
         filename = get_file_name(url)
+        print(f"{index}. ✅ Downloaded: {filename}")
         download_file(url, filename)
     else:
         print(
-            f"⚠️ Skipping {entry.id} ({entry.name}): "
+            f"{index}. ⚠️ Skipping {entry.id} ({entry.name}): "
             f"No valid download URL found."
-            )
+        )
 
     # Process child entries, if any
     children = get_child_entries(client, entry.id)
@@ -223,12 +222,13 @@ def process_entry(client, entry):
         child_url = get_download_url(client, child)
         if child_url:
             child_filename = get_file_name(child_url)
+            print(f"{index}. ✅ Downloaded child: {child_filename}")
             download_file(child_url, child_filename)
         else:
             print(
-                f"⚠️ Skipping child entry {child.id} ({child.name}): "
+                f"{index}. ⚠️ Skipping child entry {child.id} ({child.name}): "
                 f"No valid download URL found."
-                )
+            )
 
 
 def main():
@@ -265,8 +265,8 @@ def main():
     print(f"Found {len(entries)} entries. Starting downloads...")
 
     # Process one entry at a time (no threading)
-    for entry in entries:
-        process_entry(client, entry)
+    for idx, entry in enumerate(entries, start=1):
+        process_entry(client, entry, idx)
 
     print("✅ All downloads complete!")
 
