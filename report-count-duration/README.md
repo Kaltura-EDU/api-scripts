@@ -9,8 +9,8 @@ The output includes:
 - Two CSV files (summary and detailed entry list), named based on your selected interval
 
 # Caveat
-* If your interval size is too broad (e.g., `RESTRICTION_INTERVAL = 1` for yearly), and your dataset is large, you may still hit the 10,000-entry cap and the script will exit early with a warning. If that happens, try increasing the restriction level (e.g., set it to 2=Monthly or 3=Weekly). This is so the script returns fewer entries per API call and stays underneath the "10,000 entries per call" limit. 
-* You may not need to be on a VPN to run this script, but if you encounter connection errors or hanging behavior, a VPN may help — especially when running large volumes of API calls. In other words, if you're working from home, it's possible your ISP may not like you making so many API calls to the same.
+* If your interval size is too broad (e.g., `RESTRICTION_INTERVAL = 1` for yearly), and your dataset is large, you may still hit the 10,000-entry cap and the script will exit early with a warning. If that happens, try increasing the value of the `RESTRICTION_INTERVAL` variable. This will make the script pull smaller datasets, hopefully returning fewer entries per API call and staying underneath the "10,000 entries per call" limit. 
+* You may not need to be on a VPN to run this script, but if you encounter connection errors or hanging behavior, a VPN may help — especially when running large volumes of API calls. In other words, if you're working from home, it's possible your ISP may not like you making so many API calls to the same client. :) 
 * Category filtering uses `categoriesIdsMatchOr`, so if your category ID has subcategories, entries in those subcategories will also be included.
 
 # How to Run the Script
