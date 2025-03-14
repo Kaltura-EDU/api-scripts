@@ -1,17 +1,18 @@
 """
 Kaltura Report - Entry Count and Duration Summary
 
-This script retrieves Kaltura video entries filtered by tag and/or category
+This script retrieves Kaltura video entries filtered by tag and/or category,
 and generates a report showing entry counts and total durations, broken out
 by time intervals (yearly, monthly, weekly, or daily). It's designed to
 work around Kaltura's 10,000-entry API cap by chunking queries over the time
-period specified by the script user.
+period specified by the user at runtime.
 
 Outputs:
 - Summary CSV: entry count and total duration per time chunk
-- Detailed CSV: individual entries including ID, name, duration, creation date,
-  and owner ID
+- Detailed CSV: individual entries including ID, name, duration
+  (in seconds and HH:MM:SS), creation date, update date, and owner ID
 - Onscreen totals are displayed in minutes, hours, days, months, and years
+- Console output confirms creation of both CSV files
 
 Prompts the user at runtime for:
 - Tag (optional)
@@ -19,12 +20,26 @@ Prompts the user at runtime for:
 - Start date and end date
 - Chunking interval (1 = yearly, 2 = monthly, 3 = weekly, 4 = daily)
 
+Timestamps in the detailed CSV are formatted in the time zone specified by the
+global TIMEZONE variable (default is "US/Pacific"). You can change this at the
+top of the script to match your region. Common options include:
+    - "US/Eastern"
+    - "US/Central"
+    - "US/Mountain"
+    - "US/Pacific"
+    - "US/Alaska"
+    - "US/Hawaii"
+
+See the full list of supported values here:
+https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+
 If the result set for any chunk exceeds Kaltura's maximum match threshold,
-the script will exit early and provide guidance on adjusting the interval.
+the script will exit gracefully and suggest using a smaller interval.
 
 Author: Galen Davis, UC San Diego
-Last updated: March 14 2025
+Last updated: 14 March 2025
 """
+
 
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
@@ -34,12 +49,20 @@ from KalturaClient.Plugins.Core import (
 from KalturaClient.exceptions import KalturaException
 from datetime import datetime, date, timedelta, time
 import csv
+import pytz
+
 
 # ==== Global Variables ====
 PARTNER_ID = ""
 ADMIN_SECRET = ""
 USER_ID = ""
 EXPORT_CSV = True
+# Set your desired timezone (e.g., US/Eastern, US/Central, etc.)
+TIMEZONE = "US/Pacific"
+
+# Set the timezone object based on the configured string
+local_tz = pytz.timezone(TIMEZONE)
+
 
 # Prompt the user for query parameters
 TAG = input("Enter a tag (optional): ").strip()
@@ -160,13 +183,25 @@ def fetch_entries_for_interval(start_ts, end_ts):
         for entry in result.objects:
             entry_count += 1
             total_duration += entry.duration or 0
+
+            created_at_str = datetime.fromtimestamp(
+                entry.createdAt, tz=pytz.utc
+            ).astimezone(local_tz).strftime("%Y-%m-%d %H:%M:%S")
+
+            updated_at_str = datetime.fromtimestamp(
+                entry.updatedAt, tz=pytz.utc
+            ).astimezone(local_tz).strftime("%Y-%m-%d %H:%M:%S")
+
             all_entries.append({
                 "entryId": entry.id,
                 "name": entry.name,
                 "duration_sec": entry.duration,
-                "created_at": datetime.fromtimestamp(
-                    entry.createdAt
-                    ).strftime("%Y-%m-%d"),
+                "duration": (
+                    str(timedelta(seconds=entry.duration))
+                    if entry.duration else "0:00:00"
+                ),
+                "created_at": created_at_str,
+                "updated_at": updated_at_str,
                 "owner_id": entry.userId,
             })
 
@@ -277,9 +312,14 @@ if EXPORT_CSV:
         writer = csv.DictWriter(
             f,
             fieldnames=[
-                "entryId", "name", "duration_sec", "created_at", "owner_id"
+                "entryId", "name", "duration_sec", "duration", "created_at",
+                "updated_at", "owner_id"
                 ]
         )
 
         writer.writeheader()
         writer.writerows(detailed_entries)
+
+print("\nCSV files created:")
+print(f"  - {summary_filename}")
+print(f"  - {details_filename}")
