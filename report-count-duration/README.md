@@ -52,22 +52,6 @@ The **detailed CSV** includes the following columns:
 - `created_at`
 - `owner_id` (the Kaltura user ID of the entry owner)
 
-# Changelog
-
-## v1.1 – March 2025
-- Added `owner_id` field to the detailed CSV output
-- Added top-level script docstring describing functionality, inputs, and outputs
-- Improved Flake8 compliance throughout key blocks
-- Enhanced error handling for Kaltura's 10,000 match limit (QUERY_EXCEEDED_MAX_MATCHES_ALLOWED)
-
-## v1.0 – March 2025
-- Initial release of report-count-duration script
-- Supports filtering by tag and/or category ID (AND logic)
-- Auto-chunking of queries using RESTRICTION_INTERVAL (yearly, monthly, weekly, daily)
-- Totals displayed onscreen in multiple time units (minutes, hours, days, months, years)
-- Summary and detailed CSVs saved with timestamped filenames to avoid overwrites
-
-
 # Contact
 Galen Davis  
 Senior Education Technology Specialist  
