@@ -1,3 +1,31 @@
+"""
+Kaltura Report - Entry Count and Duration Summary
+
+This script retrieves Kaltura video entries filtered by tag and/or category
+and generates a report showing entry counts and total durations, broken out
+by time intervals (yearly, monthly, weekly, or daily). It's designed to
+work around Kaltura's 10,000-entry API cap by chunking queries over the time
+period specified by the script user.
+
+Outputs:
+- Summary CSV: entry count and total duration per time chunk
+- Detailed CSV: individual entries including ID, name, duration, creation date,
+  and owner ID
+- Onscreen totals are displayed in minutes, hours, days, months, and years
+
+Prompts the user at runtime for:
+- Tag (optional)
+- Category ID (optional)
+- Start date and end date
+- Chunking interval (1 = yearly, 2 = monthly, 3 = weekly, 4 = daily)
+
+If the result set for any chunk exceeds Kaltura's maximum match threshold,
+the script will exit early and provide guidance on adjusting the interval.
+
+Author: Galen Davis, UC San Diego
+Last updated: March 14 2025
+"""
+
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
     KalturaFilterPager, KalturaSessionType, KalturaMediaEntryFilter,
@@ -113,7 +141,10 @@ def fetch_entries_for_interval(start_ts, end_ts):
             result = client.media.list(filter, pager)
         except KalturaException as e:
             if e.code == "QUERY_EXCEEDED_MAX_MATCHES_ALLOWED":
-                print("\nERROR: Kaltura refused to execute the query because it exceeds the 10,000 match limit.")
+                print(
+                    "\nERROR: Kaltura refused to execute the query "
+                    "because it exceeds the 10,000 match limit."
+                    )
                 print(
                     "Try increasing the RESTRICTION_INTERVAL value "
                     "(e.g., 3 = Weekly or 4 = Daily) to reduce the size "
@@ -135,7 +166,8 @@ def fetch_entries_for_interval(start_ts, end_ts):
                 "duration_sec": entry.duration,
                 "created_at": datetime.fromtimestamp(
                     entry.createdAt
-                ).strftime("%Y-%m-%d"),
+                    ).strftime("%Y-%m-%d"),
+                "owner_id": entry.userId,
             })
 
         pager.pageIndex += 1
@@ -243,7 +275,11 @@ if EXPORT_CSV:
 
     with open(details_filename, "w", newline="") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["entryId", "name", "duration_sec", "created_at"]
-            )
+            f,
+            fieldnames=[
+                "entryId", "name", "duration_sec", "created_at", "owner_id"
+                ]
+        )
+
         writer.writeheader()
         writer.writerows(detailed_entries)
