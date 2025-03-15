@@ -49,8 +49,19 @@ The **detailed CSV** includes the following columns:
 - `entryId`
 - `name`
 - `duration_sec`
-- `created_at`
+- `duration` (formatted as HH:MM:SS)
+- `created_at` (formatted in local time)
+- `updated_at` (formatted in local time)
 - `owner_id` (the Kaltura user ID of the entry owner)
+
+# Timezone Configuration
+Timestamps in the detailed CSV are formatted based on the `TIMEZONE` global variable at the top of the script (default is `"US/Pacific"`). You can change this to match your region. Common options include:
+- `US/Pacific`
+- `US/Mountain`
+- `US/Central`
+- `US/Eastern`
+- `US/Alaska`
+- `US/Hawaii`
 
 # Contact
 Galen Davis  
