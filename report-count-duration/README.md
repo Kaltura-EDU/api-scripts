@@ -3,12 +3,24 @@ This script generates a report summarizing the number of Kaltura video entries a
 
 To avoid hitting Kaltura’s 10,000-entry API result cap, the script automatically breaks the search into smaller time intervals (year, month, week, or day) based on your selected `RESTRICTION_INTERVAL`. You will be prompted for this value when the script runs.
 
-The output includes:
-- A summary of entry counts and total durations for each time interval
-- Final totals displayed onscreen in minutes, hours, days, months, and years
+The script output:
+- Onscreen:
+  - A summary of entry counts and total durations for each time interval
+  - Final totals displayed in minutes, hours, days, months, and years
 - Two CSV files:
   - A summary report per interval
   - A detailed list of matching entries
+ 
+### What Does “Restriction Interval” Mean?
+
+So, you may have encountered the issue that Kaltura doesn't like it when some sort of API action returns more than 10,000 entries. It'll throw an exception. So when you need to deal with more than 10,000 entries, you need to break up the API action in some way. In this case, because you have to search a date range, the way to restrict that search is by time period.
+
+Setting the `RESTRICTION_INTERVAL` is like like telling the script:  
+* When you perform the search with my search terms, break it up into separate searches based on the `RESTRICTION_INTERVAL` - it should return fewer than 10,000 results for each search.
+
+If you choose a broader interval like **year**, the script will try to pull all matching entries from an entire year at once — which may be too many. But if you pick a narrower interval like **month**, **week**, or **day**, the script will break your search into smaller chunks, making it more likely to stay under the limit and avoid errors. But it will increase the amount of time it will take the script to run. 
+
+If you're unsure, start with **monthly (2)** — it’s usually a good balance between performance and safety. If you still get an error about too many results, try **weekly (3)** or **daily (4)**.
 
 # Caveats
 - If your interval size is too broad (e.g., `RESTRICTION_INTERVAL = 1` for yearly), and your dataset is too large, Kaltura may return an error and refuse to run the query. If that happens, the script will exit gracefully and recommend using a smaller interval (e.g., weekly or daily).
