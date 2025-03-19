@@ -110,8 +110,6 @@ pip install -r requirements.txt
 python3 create-channel.py
 ```
 
-8. You’ll be prompted to set configuration variables at the top of the script before running. The script will output details about the created channel and any assigned members, moderators, or contributors.
-
 ## Contact
 
 Galen Davis  
