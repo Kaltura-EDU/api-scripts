@@ -69,6 +69,49 @@ Script execution complete.
 - The `privacyContext` must be set to `"MediaSpace"` for `appearInList` and other entitlement behaviors to work correctly.
 - The script assigns users even if they do not already exist in the Kaltura user list (though some functionality may depend on user creation later).
 
+
+## How to Run the Script
+
+1. Download `create-channel.py` and `requirements.txt` to your computer. Make sure they are in the same folder.
+2. Open a terminal or command prompt.
+3. Navigate to the folder where your files are stored:
+
+```bash
+cd /path/to/project
+```
+
+4. (Optional but recommended) Set up a virtual environment:
+
+```bash
+python3 -m venv venv
+```
+
+5. Activate the virtual environment:
+
+- **Mac/Linux**:
+```bash
+source venv/bin/activate
+```
+
+- **Windows**:
+```bash
+venv\Scripts\activate
+```
+
+6. Install the required packages:
+
+```bash
+pip install -r requirements.txt
+```
+
+7. Run the script:
+
+```bash
+python3 create-channel.py
+```
+
+8. You’ll be prompted to set configuration variables at the top of the script before running. The script will output details about the created channel and any assigned members, moderators, or contributors.
+
 ## Contact
 
 Galen Davis  
