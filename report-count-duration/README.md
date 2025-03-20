@@ -65,6 +65,8 @@ The **detailed CSV** includes the following columns:
 - `created_at` (formatted in local time)
 - `updated_at` (formatted in local time)
 - `owner_id` (the Kaltura user ID of the entry owner)
+- `original_filename` (cleaned version of the uploaded source file name, extracted from the flavorAsset URL)
+
 
 # Timezone Configuration
 Timestamps in the detailed CSV are formatted based on the `TIMEZONE` global variable at the top of the script (default is `"US/Pacific"`). You can change this to match your region. Common options include:
@@ -79,4 +81,4 @@ Timestamps in the detailed CSV are formatted based on the `TIMEZONE` global vari
 Galen Davis  
 Senior Education Technology Specialist  
 UC San Diego  
-Last updated 14 March 2025
+Last updated 20 March 2025
