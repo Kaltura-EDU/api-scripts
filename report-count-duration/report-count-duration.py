@@ -1,44 +1,19 @@
 """
-Kaltura Report - Entry Count and Duration Summary
+Kaltura Report: Entry Count and Duration Summary
 
-This script retrieves Kaltura video entries filtered by tag and/or category,
-and generates a report showing entry counts and total durations, broken out
-by time intervals (yearly, monthly, weekly, or daily). It's designed to
-work around Kaltura's 10,000-entry API cap by chunking queries over the time
-period specified by the user at runtime.
+Generates a report of Kaltura video entries filtered by tag and/or category ID,
+summarized by time intervals (yearly, monthly, weekly, or daily). Helps avoid
+Kaltura's 10,000-entry API cap by chunking queries over time.
 
 Outputs:
-- Summary CSV: entry count and total duration per time chunk
-- Detailed CSV: individual entries including ID, name, duration
-  (in seconds and HH:MM:SS), creation date, update date, owner ID, and
-  source filename
-- Onscreen totals are displayed in minutes, hours, days, months, and years
-- Console output confirms creation of both CSV files
+- Summary CSV (per interval): entry count and total duration
+- Detailed CSV: each entry with ID, name, duration, timestamps, owner ID,
+  and original filename
 
-Prompts the user at runtime for:
-- Tag (optional)
-- Category ID (optional)
-- Start date and end date
-- Chunking interval (1 = yearly, 2 = monthly, 3 = weekly, 4 = daily)
+Prompts user for search parameters and restriction interval.
+Timestamps are formatted in the configured TIMEZONE (default: "US/Pacific").
 
-Timestamps in the detailed CSV are formatted in the time zone specified by the
-global TIMEZONE variable (default is "US/Pacific"). You can change this at the
-top of the script to match your region. Common options include:
-    - "US/Eastern"
-    - "US/Central"
-    - "US/Mountain"
-    - "US/Pacific"
-    - "US/Alaska"
-    - "US/Hawaii"
-
-See the full list of supported values here:
-https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
-
-If the result set for any chunk exceeds Kaltura's maximum match threshold,
-the script will exit gracefully and suggest using a smaller interval.
-
-Author: Galen Davis, UC San Diego
-Last updated: 20 March 2025
+See README.md for usage instructions and configuration options.
 """
 
 from KalturaClient import KalturaClient, KalturaConfiguration
