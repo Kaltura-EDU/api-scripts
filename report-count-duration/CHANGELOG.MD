@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.3 – 20 March 2025
+- Added `original_filename` field to the detailed CSV export
+- Filenames are extracted from the source flavorAsset URL using Kaltura's delivery path
+- Cleanup logic removes Kaltura-appended " (Source)" text and trailing underscores before ".mp4"
+
 ## v1.2 – 15 March 2025
 - Added `created_at` and `updated_at` fields to the detailed CSV output, now showing full timestamp (YYYY-MM-DD HH:MM:SS)
 - Introduced `TIMEZONE` global variable to control output time zone (default is `"US/Pacific"`); documentation updated to include options for `"US/Eastern"`, `"US/Central"`, `"US/Mountain"`, `"US/Alaska"`, and `"US/Hawaii"`
