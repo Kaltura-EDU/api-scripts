@@ -10,7 +10,8 @@ period specified by the user at runtime.
 Outputs:
 - Summary CSV: entry count and total duration per time chunk
 - Detailed CSV: individual entries including ID, name, duration
-  (in seconds and HH:MM:SS), creation date, update date, and owner ID
+  (in seconds and HH:MM:SS), creation date, update date, owner ID, and
+  source filename
 - Onscreen totals are displayed in minutes, hours, days, months, and years
 - Console output confirms creation of both CSV files
 
@@ -37,19 +38,19 @@ If the result set for any chunk exceeds Kaltura's maximum match threshold,
 the script will exit gracefully and suggest using a smaller interval.
 
 Author: Galen Davis, UC San Diego
-Last updated: 14 March 2025
+Last updated: 20 March 2025
 """
-
 
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
     KalturaFilterPager, KalturaSessionType, KalturaMediaEntryFilter,
-    KalturaMediaType
+    KalturaMediaType, KalturaFlavorAssetFilter
 )
 from KalturaClient.exceptions import KalturaException
 from datetime import datetime, date, timedelta, time
 import csv
 import pytz
+import re
 
 
 # ==== Global Variables ====
@@ -57,11 +58,20 @@ PARTNER_ID = ""
 ADMIN_SECRET = ""
 USER_ID = ""
 EXPORT_CSV = True
-# Set your desired timezone (e.g., US/Eastern, US/Central, etc.)
+# Set your desired timezone (e.g., US/Pacific, US/Eastern, US/Central)
 TIMEZONE = "US/Pacific"
 
 # Set the timezone object based on the configured string
 local_tz = pytz.timezone(TIMEZONE)
+
+
+# Helper function to clean up filenames for export
+def clean_filename(filename):
+    # Remove trailing " (Source)" with optional extra spaces before it
+    cleaned = re.sub(r"\s*\(Source\)", "", filename)
+    # Remove any trailing underscores before ".mp4"
+    cleaned = re.sub(r"_*\.mp4$", ".mp4", cleaned)
+    return cleaned.strip()
 
 
 # Prompt the user for query parameters
@@ -192,6 +202,36 @@ def fetch_entries_for_interval(start_ts, end_ts):
                 entry.updatedAt, tz=pytz.utc
             ).astimezone(local_tz).strftime("%Y-%m-%d %H:%M:%S")
 
+            # Default to None in case there's an error
+            original_filename = None
+
+            try:
+                # Get flavor assets for this entry
+                flavor_filter = KalturaFlavorAssetFilter()
+                flavor_filter.entryIdEqual = entry.id
+                flavor_list = client.flavorAsset.list(flavor_filter)
+
+                # Find the original flavor
+                source_flavor = next(
+                    (fa for fa in flavor_list.objects if fa.isOriginal), None
+                )
+
+                if source_flavor:
+                    url = client.flavorAsset.getUrl(source_flavor.id)
+
+                    # More flexible regex that matches anything after
+                    # /fileName/ up to next /
+                    match = re.search(r"/fileName/([^/]+)/", url)
+
+                    if match:
+                        raw_filename = match.group(1)
+                        original_filename = clean_filename(raw_filename)
+
+            except Exception as e:
+                # Optional: log error for edge cases
+                print(f"Error retrieving filename for entry {entry.id}: {e}")
+                original_filename = None
+
             all_entries.append({
                 "entryId": entry.id,
                 "name": entry.name,
@@ -203,6 +243,7 @@ def fetch_entries_for_interval(start_ts, end_ts):
                 "created_at": created_at_str,
                 "updated_at": updated_at_str,
                 "owner_id": entry.userId,
+                "original_filename": original_filename,
             })
 
         pager.pageIndex += 1
@@ -312,8 +353,8 @@ if EXPORT_CSV:
         writer = csv.DictWriter(
             f,
             fieldnames=[
-                "entryId", "name", "duration_sec", "duration", "created_at",
-                "updated_at", "owner_id"
+                "entryId", "name", "duration_sec", "duration",
+                "created_at", "updated_at", "owner_id", "original_filename"
                 ]
         )
 
