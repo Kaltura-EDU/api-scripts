@@ -4,8 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## v1.3 – 20 March 2025
 - Added `original_filename` field to the detailed CSV export
-- Filenames are extracted from the source flavorAsset URL using Kaltura's delivery path
-- Cleanup logic removes Kaltura-appended " (Source)" text and trailing underscores before ".mp4"
+- Filenames are extracted from the source flavor's download URL, retrieved via flavorAsset.getUrl
+- Cleanup logic removes Kaltura-appended " (Source)" at the end of filenames and also removes any trailing underscores
 
 ## v1.2 – 15 March 2025
 - Added `created_at` and `updated_at` fields to the detailed CSV output, now showing full timestamp (YYYY-MM-DD HH:MM:SS)
