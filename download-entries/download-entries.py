@@ -1,11 +1,17 @@
 '''
-Downloads source files from entries into a subfolder "kaltura_downloads" based
-on a tag, category ID, comma-delimited list of entry IDs, or owner's user ID.
-You can change the name of the folder if desired with one of the global
-variables.
+Downloads source files from Kaltura media entries into a subfolder named
+"kaltura_downloads", based on one of four search criteria: a tag, category ID,
+comma-delimited list of entry IDs, or owner's user ID.
 
-Be sure to provide your partner ID and admin secret as the value of the global
-variables below before attempting to run the script.
+Entries that are not valid downloadable media (e.g., playlists)
+are automatically skipped. Filenames are optionally cleaned to remove
+"(Source)" and trailing underscores or dashes.
+
+You can change the name of the download folder and filename cleaning behavior
+using the global variables defined at the top of the script.
+
+Be sure to provide your partner ID and admin secret in the global variables
+before running the script.
 '''
 
 import os
@@ -18,12 +24,14 @@ from KalturaClient.Plugins.Core import (
     KalturaFlavorAssetFilter
 )
 from KalturaClient.exceptions import KalturaException
+import re
 
 # ---- CONFIGURABLE VARIABLES ----
 PARTNER_ID = ""
 ADMIN_SECRET = ""
 DOWNLOAD_FOLDER = "kaltura_downloads"
 RETRY_ATTEMPTS = 3
+REMOVE_SUFFIX = True
 # -- END CONFIGURABLE VARIABLES --
 
 
@@ -119,8 +127,12 @@ def get_flavor_download_url(client, entry):
 
 
 def get_download_url(client, entry):
+    # Skip entries that are not media entries (e.g., playlists, documents)
+    if not hasattr(entry, "mediaType"):
+        return None
+
     entry_details = get_entry_details(client, entry.id)
-    if not entry_details:
+    if not entry_details or not hasattr(entry_details, "mediaType"):
         return None
 
     media_type = getattr(
@@ -149,6 +161,18 @@ def get_file_name(url, counter=0):
     if not filename:
         filename = os.path.basename(urlparse(url).path)
 
+    # 🔍 Clean up filename if REMOVE_SUFFIX is enabled
+    if REMOVE_SUFFIX:
+        base, ext = os.path.splitext(filename)
+
+        # Remove (Source), with or without surrounding spaces/underscores
+        base = re.sub(r"[\s_]*\(Source\)[\s_]*", "", base)
+
+        # Clean up trailing underscore, space, or dash
+        base = re.sub(r"[_\-\s]+$", "", base)
+
+        filename = f"{base}{ext}"
+
     file_path = os.path.join(DOWNLOAD_FOLDER, filename)
     while os.path.exists(file_path):
         counter += 1
@@ -170,7 +194,6 @@ def download_file(url, filename):
         with open(file_path, "wb") as file:
             for chunk in response.iter_content(chunk_size=8192):
                 file.write(chunk)
-        print(f"✅ Downloaded: {filename}")
     except requests.RequestException as e:
         print(f"❌ Failed to download {filename}: {e}")
 
@@ -204,7 +227,6 @@ def worker(queue, client):
 
 
 def process_entry(client, entry, index):
-    """Processes a single entry: gets download URL and saves the file."""
     url = get_download_url(client, entry)
     if url:
         filename = get_file_name(url)
@@ -212,11 +234,10 @@ def process_entry(client, entry, index):
         download_file(url, filename)
     else:
         print(
-            f"{index}. ⚠️ Skipping {entry.id} ({entry.name}): "
-            f"No valid download URL found."
-        )
+            f"{index}. ⚠️ Skipping {entry.id} ({entry.name}): No valid "
+            f"download URL found."
+            )
 
-    # Process child entries, if any
     children = get_child_entries(client, entry.id)
     for child in children:
         child_url = get_download_url(client, child)
@@ -228,7 +249,7 @@ def process_entry(client, entry, index):
             print(
                 f"{index}. ⚠️ Skipping child entry {child.id} ({child.name}): "
                 f"No valid download URL found."
-            )
+                )
 
 
 def main():
@@ -258,6 +279,9 @@ def main():
         return
 
     entries = get_entries(client, method, identifier)
+    # Filter out non-media entries early (e.g., playlists)
+    entries = [e for e in entries if hasattr(e, "mediaType")]
+
     if not entries:
         print("No entries found. Exiting.")
         return
