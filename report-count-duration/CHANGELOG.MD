@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.4 – 21 March 2025
+- Added optional runtime filter for `owner_id`, allowing searches by media entry owner
+- Introduced `EARLIEST_START_DATE` global variable to support full-repository searches
+- If both start and end dates are left blank, the script now defaults to search from this earliest known date through today
+- Improved date prompt logic for better error handling and user flexibility
+- Updated docstring and README to reflect new filtering and fallback behavior
+
 ## v1.3 – 20 March 2025
 - Added `original_filename` field to the detailed CSV export
 - Filenames are extracted from the source flavor's download URL, retrieved via flavorAsset.getUrl
