@@ -42,9 +42,10 @@ If you're unsure, start with **monthly (2)** — it’s usually a good balance b
 7. Run the script:  
    `python3 report-count-duration.py`
 8. You’ll be prompted for:
+   - An owner user ID (optional) 
    - A tag (optional)
    - A category ID (optional)
-   - A start and end date (leave end date blank if you want it to be today)
+   - A start and end date (optional — leave both blank to search from the beginning of your repository)
    - A restriction interval (1 = Yearly, 2 = Monthly, 3 = Weekly, 4 = Daily)
 
 # Output CSVs
@@ -77,8 +78,21 @@ Timestamps in the detailed CSV are formatted based on the `TIMEZONE` global vari
 - `US/Alaska`
 - `US/Hawaii`
 
+
+# Earliest Repository Date
+
+If the user leaves both start and end dates blank, the script will search from the earliest known entry in your Kaltura repository. You can configure this value at the top of the script by editing the `EARLIEST_START_DATE` global variable. It should be entered in `YYYY-MM-DD` format. 
+
+Example:
+```python
+EARLIEST_START_DATE = "2017-09-18"
+```
+
+This keeps things clean, user-friendly, and consistent with your other script behavior.
+
+
 # Contact
 Galen Davis  
 Senior Education Technology Specialist  
 UC San Diego  
-Last updated 20 March 2025
+Last updated 26 March 2025
