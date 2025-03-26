@@ -1,20 +1,31 @@
 """
 Kaltura Report: Entry Count and Duration Summary
 
-Generates a report of Kaltura video entries filtered by tag and/or category ID,
-summarized by time intervals (yearly, monthly, weekly, or daily). Helps avoid
-Kaltura's 10,000-entry API cap by chunking queries over time.
+Generates a report of Kaltura video entries filtered by owner ID, tag,
+and/or category ID, summarized by time intervals (yearly, monthly, weekly,
+or daily). Helps avoid Kaltura's 10,000-entry API cap by chunking queries
+over time.
 
 Outputs:
 - Summary CSV (per interval): entry count and total duration
 - Detailed CSV: each entry with ID, name, duration, timestamps, owner ID,
   and original filename
 
-Prompts user for search parameters and restriction interval.
+Prompts user for:
+- Owner user ID (optional)
+- Tag (optional)
+- Category ID (optional)
+- Start and end dates (optional — defaults to full repository range
+  if left blank)
+- Restriction interval for chunking (1 = yearly, 2 = monthly, etc.)
+
 Timestamps are formatted in the configured TIMEZONE (default: "US/Pacific").
+Set EARLIEST_START_DATE at the top of the script to define the beginning of
+your repository timeline.
 
 See README.md for usage instructions and configuration options.
 """
+
 
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
@@ -35,6 +46,9 @@ USER_ID = ""
 EXPORT_CSV = True
 # Set your desired timezone (e.g., US/Pacific, US/Eastern, US/Central)
 TIMEZONE = "US/Pacific"
+# Provide YYYY-MM-DD when your Kaltura KMC was instantiated
+EARLIEST_START_DATE = ""
+
 
 # Set the timezone object based on the configured string
 local_tz = pytz.timezone(TIMEZONE)
@@ -50,20 +64,28 @@ def clean_filename(filename):
 
 
 # Prompt the user for query parameters
+OWNER_ID = input("Enter an owner user ID (optional): ").strip()
 TAG = input("Enter a tag (optional): ").strip()
 CATEGORY_ID = input("Enter a category ID (optional): ").strip()
 # Prompt user for date range
-start_input = input("Enter a START DATE (YYYY-MM-DD): ").strip()
+start_input = input(
+    "Enter a START DATE (YYYY-MM-DD) [press Enter "
+    "to search from the beginning]: "
+).strip()
 end_input = input(
     "Enter an END DATE (YYYY-MM-DD) [press Enter for today]: "
-    ).strip()
+).strip()
 
-# Parse dates
-try:
-    START_DATE = datetime.strptime(start_input, "%Y-%m-%d").date()
-except ValueError:
-    raise ValueError("START DATE must be in YYYY-MM-DD format.")
+# Parse START_DATE
+if start_input:
+    try:
+        START_DATE = datetime.strptime(start_input, "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError("START DATE must be in YYYY-MM-DD format.")
+else:
+    START_DATE = datetime.strptime(EARLIEST_START_DATE, "%Y-%m-%d").date()
 
+# Parse END_DATE
 if end_input:
     try:
         END_DATE = datetime.strptime(end_input, "%Y-%m-%d").date()
@@ -135,6 +157,8 @@ def fetch_entries_for_interval(start_ts, end_ts):
 
     filter = KalturaMediaEntryFilter()
     filter.mediaTypeEqual = KalturaMediaType.VIDEO
+    if OWNER_ID:
+        filter.userIdEqual = OWNER_ID
     if CATEGORY_ID:
         filter.categoriesIdsMatchOr = CATEGORY_ID
     if TAG:
@@ -305,16 +329,19 @@ if EXPORT_CSV:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Sanitize tag/category text for filenames
+    owner_label = OWNER_ID if OWNER_ID else "noOwner"
     tag_label = TAG.replace(" ", "_") if TAG else "noTag"
     cat_label = CATEGORY_ID if CATEGORY_ID else "noCategory"
 
     summary_filename = (
         "video_summary_"
-        f"{tag_label}_{cat_label}_{interval_label}_{timestamp}.csv"
+        f"{tag_label}_{cat_label}_{owner_label}_"
+        f"{interval_label}_{timestamp}.csv"
     )
     details_filename = (
         "video_details_"
-        f"{tag_label}_{cat_label}_{interval_label}_{timestamp}.csv"
+        f"{tag_label}_{cat_label}_{owner_label}_"
+        f"{interval_label}_{timestamp}.csv"
     )
 
     with open(summary_filename, "w", newline="") as f:
