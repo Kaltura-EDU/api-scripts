@@ -19,17 +19,12 @@ directory as the script.
 | `members`     | Comma-separated list of member user IDs. Use quotes if listing multiple.     |
 | `privacy`     | Channel privacy level: `1` = Public, `2` = Authenticated, `3` = Private      |
 
-You can use [`channelDetails_template.csv`](channelDetails_template.csv) as a starting point.
+You can use `channelDetails_template.csv` as a template.
 
 ## ⚙️ Required Configuration
-Before running the script, you **must** edit the following variables at the top
-of the file:
+Before running the script, you **must** edit the following variables at the top of the file:
 
 - `PARTNER_ID`: Your Kaltura partner ID (integer)
 - `ADMIN_SECRET`: Your admin secret key (string)
 - `USER_ID`: Your user ID (used for generating the session)
-- `PARENT_ID`: The category ID under which new channels will be created. 
-  Usually the "Channels" category in your MediaSpace instance.
-
-```python
-PARENT_ID = None  # Replace with the numeric ID of your parent category
+- `PARENT_ID`: The category ID under which new channels will be created. Usually the "channels" category in your MediaSpace instance, but it depends on your channel creation preferences. For example, if you're creating a bunch of galleries, you might want to put it under the "galleries" category. 
