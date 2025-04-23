@@ -31,6 +31,41 @@ Before running the script, you **must** edit the following variables at the top 
 - `MEDIA_SPACE_BASE_URL`: The base URL of your MediaSpace instance, probably (but not necessarily) ending in `/channel/`.
   Example: `https://mediaspace.ucsd.edu/channel/`
 
+
+## 🦖 Getting Started
+
+### 1. Install dependencies
+
+Before running the script, make sure you have Python 3 installed and install the required packages:
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Download the script and CSV template
+
+Clone or download the repo, then edit the provided `channelDetails_template.csv` with your own data. Save it as `channelDetails.csv` in the same directory as the script.
+
+### 3. Edit global variables
+
+Open the script file and fill in the required values at the top:
+
+- `PARTNER_ID`
+- `ADMIN_SECRET`
+- `USER_ID` *(optional but recommended)*
+- `PARENT_ID`
+- `MEDIA_SPACE_BASE_URL`
+
+### 4. Run the script
+
+Once everything is filled in and saved, run:
+
+```bash
+python3 create-channels.py
+```
+
+After the script runs, a timestamped results file will be created in the same directory. It lists all channels created, along with their IDs, members, and direct MediaSpace links.
+
 ## Author
 Galen Davis  
 Senior Education Technology Specialist, UC San Diego  
