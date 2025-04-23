@@ -28,3 +28,10 @@ Before running the script, you **must** edit the following variables at the top 
 - `ADMIN_SECRET`: Your admin secret key (string)
 - `USER_ID`: your user ID (optional; actions will be assigned to this user)
 - `PARENT_ID`: The category ID under which new channels will be created. Usually the "channels" category in your MediaSpace instance, but it depends on your channel creation preferences. For example, if you're creating a bunch of galleries, you might want to put it under the "galleries" category. 
+- `MEDIA_SPACE_BASE_URL`: The base URL of your MediaSpace instance, probably (but not necessarily) ending in `/channel/`.
+  Example: `https://mediaspace.ucsd.edu/channel/`
+
+## Author
+Galen Davis  
+Senior Education Technology Specialist, UC San Diego  
+22 April 2025
