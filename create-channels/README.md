@@ -7,7 +7,7 @@ This script allows you to create multiple Kaltura MediaSpace channels in bulk by
 - Assigns owners and adds members to each channel
 - Outputs a CSV summary of all created channels, including direct MediaSpace links (leveraging the MEDIA_SPACE_BASE_URL variable
 
-## 📂 CSV Input File
+## CSV Input File
 Your input file should be named `channelDetails.csv` and placed in the same
 directory as the script.
 
