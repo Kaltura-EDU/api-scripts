@@ -13,6 +13,8 @@ Required global variables to set before running:
 - USER_ID: (str) Optional, used to generate the KS.
 - PARENT_ID: (int) The category ID under which new channels will be created.
   This must point to a category you have permission to write to.
+- `MEDIA_SPACE_BASE_URL`: The base URL of your MediaSpace instance, ending in `/channel/`.
+  Example: `https://mediaspace.ucsd.edu/channel/`
 
 CSV input format (channelDetails.csv):
 - Required headers: channelName, owner, members, privacy
