@@ -19,7 +19,7 @@ directory as the script.
 | `members`     | Comma-separated list of member user IDs. Use quotes if listing multiple.     |
 | `privacy`     | Channel privacy level: `1` = Public, `2` = Authenticated, `3` = Private      |
 
-You can use `channelDetails_template.csv` as a template.
+You can use `channelDetails.csv` as a template. Be sure not to change the filename, and keep it in the same directory as the script.
 
 ## Required Configuration
 Before running the script, you **must** edit the following variables at the top of the file:
