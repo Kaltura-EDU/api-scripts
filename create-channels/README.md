@@ -21,7 +21,7 @@ directory as the script.
 
 You can use `channelDetails_template.csv` as a template.
 
-## ⚙️ Required Configuration
+## Required Configuration
 Before running the script, you **must** edit the following variables at the top of the file:
 
 - `PARTNER_ID`: Your Kaltura partner ID (integer)
