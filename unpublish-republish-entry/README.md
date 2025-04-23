@@ -24,7 +24,7 @@ Update the session credentials:
 ```python
 PARTNER_ID = ""       # Your partner ID
 ADMIN_SECRET = ""     # Your admin secret
-USER_ID = "api-..."   # Your admin user ID
+USER_ID = ""   # Optional; only used the session creation
 ```
 
 All sessions use: `privileges = "all:*,disableentitlement"`
