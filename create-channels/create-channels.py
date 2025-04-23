@@ -17,7 +17,7 @@ Required global variables to set before running:
 CSV input format (channelDetails.csv):
 - Required headers: channelName, owner, members, privacy
   - members: Comma-separated user IDs (wrap in quotes if multiple)
-  - privacy: 
+  - privacy:
     1 = Public (Anyone can view)
     2 = Authenticated Users (Only logged-in users can view)
     3 = Private (Only members can view)
