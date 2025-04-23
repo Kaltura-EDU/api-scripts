@@ -26,5 +26,5 @@ Before running the script, you **must** edit the following variables at the top 
 
 - `PARTNER_ID`: Your Kaltura partner ID (integer)
 - `ADMIN_SECRET`: Your admin secret key (string)
-- `USER_ID`: Your user ID (used for generating the session)
+- `USER_ID`: your user ID (optional; actions will be assigned to this user)
 - `PARENT_ID`: The category ID under which new channels will be created. Usually the "channels" category in your MediaSpace instance, but it depends on your channel creation preferences. For example, if you're creating a bunch of galleries, you might want to put it under the "galleries" category. 
