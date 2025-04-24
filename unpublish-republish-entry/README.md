@@ -59,4 +59,21 @@ It will ask for:
 
 This script only handles one entry at a time. It's designed to be a fast fix for support tickets where an entry needs a metadata reset in the Media Gallery.
 
+### Important Note on FULL_NAME_PREFIX
+
+We initially attempted to use the category nameEqual filter to look up categories by Canvas course ID (e.g., `15712`), but encountered unreliable results due to Kaltura allowing duplicate category names across different parts of the hierarchy. This made it difficult to consistently find the correct Media Gallery category. 
+
+Since this script is primarily designed to fix "Access Denied" errors in Canvas Media Galleries, we instead rely on the  `fullNameEqual` field. This matches the full path of the category in the hierarchy, like:
+
+```shell
+`Canvas_Prod>site>channels>15712`
+```
+To make this work in your own environment, you’ll need to set the FULL_NAME_PREFIX global variable near the top of the script. For us (UC San Diego), all Media Gallery categories live under:
+
+```python
+FULL_NAME_PREFIX = "Canvas_Prod>site>channels>"
+```
+
+If your institution uses a different naming or folder structure, be sure to update this variable accordingly so the script can correctly locate the category.
+
 Author: Galen Davis — Kaltura survivor and automation enthusiast
