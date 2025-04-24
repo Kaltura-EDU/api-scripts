@@ -54,10 +54,18 @@ def get_entries(client, method, identifier):
         return []
 
     pager = KalturaFilterPager()
+    pager.pageSize = 500  # Max allowed
+    pager.pageIndex = 1
+
     try:
-        result = client.baseEntry.list(filter, pager)
-        if result.objects:
+        while True:
+            result = client.baseEntry.list(filter, pager)
+            if not result.objects:
+                break
             entries.extend(result.objects)
+            if len(entries) >= result.totalCount:
+                break
+            pager.pageIndex += 1
     except Exception as e:
         print(f"Error retrieving entries: {e}")
 
@@ -77,7 +85,7 @@ def get_captions(client, entry_id):
         return []
 
 
-def download_captions(client, captions, entry):
+def download_captions(client, captions, entry, counter):
     if not os.path.exists(DOWNLOAD_FOLDER):
         os.makedirs(DOWNLOAD_FOLDER)
 
@@ -95,7 +103,8 @@ def download_captions(client, captions, entry):
                 with urllib.request.urlopen(caption_url) as response:
                     with open(file_path, "wb") as file:
                         file.write(response.read())
-                    print(f"Downloaded: {file_path}")
+                    print(f"{counter[0]}. Downloaded: {file_path}")
+                    counter[0] += 1
             except ssl.SSLError as ssl_err:
                 print(f"⚠️ SSL error downloading {caption.label} for entry {entry.id}: {ssl_err}")
                 print("If you're on macOS, try running Install Certificates.command from your Python folder.")
@@ -132,6 +141,8 @@ def main():
         return
 
     entries = get_entries(client, method, identifier)
+    print(f"{len(entries)} entries found.")
+    counter = [1]  # Mutable counter to track downloaded captions
     if not entries:
         print("No entries found. Exiting.")
         return
@@ -139,7 +150,7 @@ def main():
     for entry in entries:
         captions = get_captions(client, entry.id)
         if captions:
-            download_captions(client, captions, entry)
+            download_captions(client, captions, entry, counter)
         else:
             print(f"No captions found for entry {entry.id}")
 
