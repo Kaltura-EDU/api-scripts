@@ -19,7 +19,11 @@ It might end up being long, but it'll have lots of metadata that will help you i
 9. Install the needed modules: `pip install -r requirements.txt`
 10. Run the script: `python3 download-captions.py`
 
+## Troubleshooting SSL Errors
+If you receive an SSL certificate error when downloading captions, your system may be missing the trusted certificate store.
+- macOS users: Run /Applications/Python\ 3.x/Install\ Certificates.command in Terminal (replace 3.x with your Python version).
+- Alternatively, the script now includes a friendly message when this issue occurs.
 
-Galen Davis, Senior Education Technology Specialist
-UC San Diego
-19 February 2025
+Galen Davis, Senior Education Technology Specialist  
+UC San Diego  
+24 April 2025
