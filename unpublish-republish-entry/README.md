@@ -1,6 +1,6 @@
 # unpublish-republish-entry.py
 
-This script solves a common issue in Kaltura where a video entry appears in a Canvas Media Gallery but gives users an "Access Denied" error when clicked. The fix is to unpublish the entry from the category and re-add it—this script automates that process using the Kaltura API.
+This script addresses a common issue in Kaltura where a video entry appears in a Canvas Media Gallery but gives users an "Access Denied" error when clicked. The fix is to unpublish the entry from the category and re-add it. This script automates that process using the Kaltura API, as long as you know the entry ID and the category name OR ID. A global variable determines whether you want to use a category ID or the category name. 
 
 ## Features
 
