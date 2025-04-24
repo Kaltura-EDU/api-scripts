@@ -7,6 +7,8 @@ This script allows you to download all caption assets from one or more Kaltura m
 ```
 It might end up being long, but it'll have lots of metadata that will help you identify what caption file is from what entry. 
 
+The script now supports pagination, so all matching entries will be included — not just the first 30. Each caption downloaded will also show a numbered message, helping you track progress when working with large batches.
+
 # How to Run the Script
 1. Download **download-captions.py** and **Requirements.txt** to your computer. Ensure they end up in the same folder.
 2. Open **download-captions.py** with a text editor.
