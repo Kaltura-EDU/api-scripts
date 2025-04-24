@@ -59,3 +59,4 @@ It will ask for:
 
 This script only handles one entry at a time. It's designed to be a fast fix for support tickets where an entry needs a metadata reset in the Media Gallery.
 
+Author: Galen Davis — Kaltura survivor and automation enthusiast
