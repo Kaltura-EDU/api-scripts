@@ -14,7 +14,8 @@ from KalturaClient.Plugins.Core import (
 )
 from KalturaClient.Plugins.Caption import KalturaCaptionAssetFilter
 import re
-from datetime import datetime
+from datetime import datetime, timezone
+import ssl
 
 # Configuration Variables
 PARTNER_ID = ""
@@ -80,7 +81,7 @@ def download_captions(client, captions, entry):
     if not os.path.exists(DOWNLOAD_FOLDER):
         os.makedirs(DOWNLOAD_FOLDER)
 
-    entry_date = datetime.utcfromtimestamp(entry.createdAt).strftime('%Y-%m-%d')
+    entry_date = datetime.fromtimestamp(entry.createdAt, tz=timezone.utc).strftime('%Y-%m-%d')
     entry_id = entry.id
     entry_title = sanitize_filename(entry.name)
 
@@ -90,10 +91,15 @@ def download_captions(client, captions, entry):
             caption_url = client.caption.captionAsset.getUrl(caption.id, 0)
             file_path = os.path.join(DOWNLOAD_FOLDER, f"{entry_date}_{entry_id}_{entry_title}_{caption_label}.srt")
 
-            with urllib.request.urlopen(caption_url) as response:
-                with open(file_path, "wb") as file:
-                    file.write(response.read())
+            try:
+                with urllib.request.urlopen(caption_url) as response:
+                    with open(file_path, "wb") as file:
+                        file.write(response.read())
                     print(f"Downloaded: {file_path}")
+            except ssl.SSLError as ssl_err:
+                print(f"⚠️ SSL error downloading {caption.label} for entry {entry.id}: {ssl_err}")
+                print("If you're on macOS, try running Install Certificates.command from your Python folder.")
+
         except Exception as e:
             print(f"Error downloading caption {caption.id}: {e}")
 
