@@ -1,3 +1,26 @@
+"""
+This script duplicates Kaltura media entries from one partner ID (PID) to
+another using the Kaltura API. It supports selecting entries by tag, by
+category ID, or by a list of specific entry IDs. The script copies entries
+along with associated metadata, thumbnails, captions, attachments, and cue
+points. For entries with parent/child relationships (multi-stream recordings),
+it preserves the hierarchy.
+
+Key features:
+- Optional copying of quiz data (questions/answers) and ASR (auto-generated)
+  captions.
+- Reassigns the destination entry owner, co-editors, and co-publishers as
+  specified.
+- Adds additional destination tags if configured.
+- Generates a CSV report logging the source and destination entry IDs.
+
+This script assumes access to admin-level Kaltura credentials (admin secret
+keys) for both the source and destination environments.
+
+Author: Galen Davis
+Last updated: April 26, 2025
+"""
+
 import csv
 import time
 from datetime import datetime
@@ -35,13 +58,13 @@ SOURCE_ADMIN_SECRET = ""
 DEST_PID = ""
 DEST_ADMIN_SECRET = ""
 COPY_QUIZ_ANSWERS = False
-COPY_ASR_CAPTIONS = False
+COPY_ASR_CAPTIONS = True
 CAPTION_LABEL = "English (auto-generated)"
 COPY_ATTACHMENTS = True
-DESTINATION_TAG = "duplicated_entry"
-DESTINATION_OWNER = "admin"
+DESTINATION_OWNER = ""
 DESTINATION_COEDITORS = ""
 DESTINATION_COPUBLISHERS = ""
+DESTINATION_TAG = ""
 # -- END CONFIGURABLE VARIABLES --
 
 CSV_FILENAME = (
@@ -68,27 +91,50 @@ def get_kaltura_client(partner_id, admin_secret):
 
 
 def get_entries(client, method, identifier):
-    entries = []
+    """Retrieve entries based on tag, category, or entry IDs."""
+    if not identifier:
+        print("⚠️ No identifier provided. Exiting.")
+        return []
+
     filter = KalturaBaseEntryFilter()
     if method == "tag":
         filter.tagsLike = identifier
+        print(f"🔎 Searching entries by tag: {identifier}")
     elif method == "category":
-        filter.categoriesIdsMatchOr = identifier
+        filter.categoryAncestorIdIn = str(identifier)
+        print(f"🔎 Searching entries under Category ID: {identifier}")
     elif method == "entry_ids":
         filter.idIn = identifier
+        print("🔎 Searching entries by specific IDs.")
     else:
-        print("Invalid method selection.")
-        return []  # Ensure an empty list is returned instead of None
+        print("❌ Invalid method.")
+        return []
 
     pager = KalturaFilterPager()
-    try:
-        result = client.baseEntry.list(filter, pager)
-        if result.objects:
-            entries.extend(result.objects)
-    except Exception as e:
-        print(f"Error retrieving entries: {e}")
+    pager.pageSize = 500
 
-    return entries  # Always return a list
+    entries = []
+    page = 1
+    while True:
+        try:
+            pager.pageIndex = page
+            result = client.baseEntry.list(filter, pager)
+
+            if not result.objects:
+                break
+
+            entries.extend(result.objects)
+
+            if len(result.objects) < pager.pageSize:
+                break
+
+            page += 1
+
+        except KalturaException as e:
+            print(f"❌ API error while retrieving entries: {e}")
+            break
+
+    return entries
 
 
 def get_child_entries(client, parent_entry_id):
@@ -96,6 +142,7 @@ def get_child_entries(client, parent_entry_id):
     child_filter = KalturaBaseEntryFilter()
     child_filter.parentEntryIdEqual = parent_entry_id
     pager = KalturaFilterPager()
+    pager.pageSize = 500
 
     try:
         children = client.baseEntry.list(child_filter, pager).objects
@@ -123,6 +170,7 @@ def get_source_url(client, entry_id):
     flavor_filter = KalturaFlavorAssetFilter()
     flavor_filter.entryIdEqual = entry_id
     pager = KalturaFilterPager()
+    pager.pageSize = 500
 
     flavors = client.flavorAsset.list(flavor_filter, pager).objects
     if not flavors:
@@ -150,6 +198,7 @@ def get_cuepoints(client, entry_id):
         cuepoint_filter = KalturaCuePointFilter()
         cuepoint_filter.entryIdEqual = entry_id
         pager = KalturaFilterPager()
+        pager.pageSize = 500
         response = client.cuePoint.cuePoint.list(cuepoint_filter, pager)
 
         cuepoints = []
@@ -322,6 +371,7 @@ def get_captions(client, entry_id):
     caption_filter = KalturaCaptionAssetFilter()
     caption_filter.entryIdEqual = entry_id
     pager = KalturaFilterPager()
+    pager.pageSize = 500
 
     captions = []
     try:
@@ -386,6 +436,7 @@ def get_thumbnails(client, entry_id):
     thumb_filter = KalturaThumbAssetFilter()
     thumb_filter.entryIdEqual = entry_id
     pager = KalturaFilterPager()
+    pager.pageSize = 500
 
     try:
         thumbnails = client.thumbAsset.list(thumb_filter, pager).objects
@@ -431,6 +482,7 @@ def get_attachments(client, entry_id):
     attachment_filter = KalturaAttachmentAssetFilter()
     attachment_filter.entryIdEqual = entry_id
     pager = KalturaFilterPager()
+    pager.pageSize = 500
 
     try:
         attachments = (
@@ -464,6 +516,7 @@ def copy_attachments(
         attachment_filter = KalturaAttachmentAssetFilter()
         attachment_filter.entryIdEqual = source_entry_id
         pager = KalturaFilterPager()
+        pager.pageSize = 500
 
         attachments = (
             client_source.attachment.attachmentAsset.list(
@@ -592,9 +645,6 @@ def copy_entry(
         ):
     start_time = time.time()
 
-    print("\n" + "-" * 80)
-    print(f"🚀 Processing entry {entry.id} - {entry.name}")
-    print("-" * 80 + "\n")
     debug_timer(start_time, "Started entry duplication process.")
 
     source_entry = client_source.media.get(entry.id)
@@ -854,18 +904,21 @@ def write_to_csv(entries):
             writer.writerow([
                 "source entry ID", "title", "parent entry ID",
                 "destination entry id", "destination owner",
-                "destination coeds", "destination copubs"
+                "destination coeds", "destination copubs", "destination tags"
             ])
+
             for entry in entries.values():
                 writer.writerow([
-                    entry["source_id"], entry["title"], entry["parent_id"],
-                    entry["dest_id"], DESTINATION_OWNER,
-                    ",".join(DESTINATION_COEDITORS.split(",")) if (
-                        DESTINATION_COEDITORS
-                    ) else "",
-                    ",".join(DESTINATION_COPUBLISHERS.split(",")) if (
-                        DESTINATION_COPUBLISHERS
-                     ) else ""
+                    entry["source_id"],
+                    entry["title"],
+                    entry["parent_id"],
+                    entry["dest_id"],
+                    DESTINATION_OWNER,
+                    ",".join(DESTINATION_COEDITORS.split(","))
+                    if DESTINATION_COEDITORS else "",
+                    ",".join(DESTINATION_COPUBLISHERS.split(","))
+                    if DESTINATION_COPUBLISHERS else "",
+                    DESTINATION_TAG
                 ])
 
 
@@ -906,20 +959,28 @@ def main():
 
     entries = get_entries(client_source, method, identifier)
     if not entries:
-        print("No entries found. Exiting.")
+        print("⚠️ No entries matched your search. Exiting script.")
         return
 
     csv_entries = {}
     entry_id_mapping = {}
 
+    print(f"✅ {len(entries)} entries found.")
     print("🤰 Sorting entries by parent-child hierarchy...")
     sorted_entries = get_sorted_entries(
         client_source, [entry.id for entry in entries]
-        )
+    )
     print(f"✅ Sorted {len(sorted_entries)} entries.")
 
-    for entry in sorted_entries:
+    for idx, entry in enumerate(sorted_entries, start=1):
         entry_start = time.time()  # Track per-entry time
+
+        print("\n" + "-" * 80)
+        print(
+            f"🚀 Processing {idx}/{len(sorted_entries)} | "
+            f"entry id: {entry.id} | title: {entry.name}"
+        )
+        print("-" * 80 + "\n")
 
         copied_entry = copy_entry(
             client_source, client_dest, entry, DEST_PID,

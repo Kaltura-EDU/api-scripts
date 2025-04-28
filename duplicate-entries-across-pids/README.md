@@ -1,6 +1,6 @@
 # Short Description
 
-This script copies entries from one Kaltura PID to another Kaltura PID. It does this by manually copying and storing all of the relevant data from the original and creating a new entry at the destination PID using all that data. It shows its progress on the command line and generates a .csv indicating source and destination entry IDs. 
+This script copies entries from one Kaltura PID to another Kaltura PID. It does this by manually copying and storing all of the relevant data from the original and creating a new entry at the destination PID using all that data. It shows detailed progress at each step in the command line and generates a .csv mapping source and destination entry IDs.
 
 # Caveat
 
@@ -19,6 +19,8 @@ I've attempted to account for a variety of use cases, but I may have missed some
 - captions
 - ASR transcripts (technically a type of attachment)
 - images
+
+ASR captions and related transcript files can be optionally excluded depending on your configuration.
 
 # How to Run This Script
 
@@ -44,6 +46,7 @@ I've attempted to account for a variety of use cases, but I may have missed some
   - As noted above, remember that if `COPY_ASR_CAPTIONS = False`, the ASR transcript and .json file will not copy to the new entry (despite their being a subtype of an attachment). 
 - **DESTINATION_TAG** (Default: "duplicated_entry")
   - The script will tag the destination entries with the value of this variable.
+  - The destination tag is appended to existing tags, not overwritten.
 - **DESTINATION_OWNER** (Default: "admin")
   - Assigns the entry at the destination to the owner specified.
   - Username does not have to be a valid user.
@@ -62,9 +65,14 @@ I've attempted to account for a variety of use cases, but I may have missed some
 - **This script does not copy quiz answers by default.** This will attempt to copy cuePoints of every other kind to the destination PID, however. ("cuePoints" can be one of the following: a hotspot, an advertisement, a quiz answer (submission), a quiz question, a code point (for running little scripts at a certain point in a video), an event, or a chapter/slide.) Personally, I find it unlikely that, when copying quizzes to another instance, you want to preserve previous submissions to the quiz. However, if you DO want to copy quiz answers for some reason, you'll need to change the value of COPY_QUIZ_ANSWERS to True. Doing so MAY work, but be aware of two things: 1) User IDs in the destination PID might not exist, causing failures (i.e. each quiz answer must have a valid userId at the destinatiopn PID); and 2) analytics might be inaccurate if all quiz answers are assigned to a single user (e.g. "admin"). If you need to copy quiz answers, be aware of these limitations. Testing is recommended before using it in production.
 - **Ad, Event, and Code cuePoints haven't been as thoroughly tested as the others.** We've never really used these features at UCSD (at least not yet) so I don't feel confident that my API-created cuePoints of this type were "real" enough. 
 - **With the exception of image entries, the script selects the largest flavor (by file size) from the source entry to create the destination entry.** For most entries, the original source flavor can be identified because its `flavorParamsId` is 0. However, multistream entries don't always follow this pattern, making it less reliable to determine the true source. Instead, this script selects the flavor with the highest `flavorAsset.sizeInBytes` value. This approach generally works well, but be aware that certain transcoding profiles might result in a flavor that is larger than the original source file, which could affect the copy. Just something to keep in mind! (Image entries don't have any flavors, so instead its `downloadUrl` is used to retrieve the source.)
-- **Children may process more slowly than their parents.** If you’re copying a multistream entry (e.g., a dual-stream recording), be aware that child entries (such as a 1080p webcam video) may take longer to process than the parent entry (e.g., a static screen share). While the script correctly duplicates both parent and child entries, they may not become "ready" on the front end at the same time. (So if you log into the destination front end and only see the parent stream, you may just need to wait longer.) You can confirm successful copying by running a `baseEntry.list` API call with `parentEntryIdEqual` set to the new parent entry’s ID. Be patient! 
+- **Child entries (e.g., secondary streams) may take longer to process than parent entries.** If you’re copying a multistream entry (e.g., a dual-stream recording), be aware that child entries (such as a 1080p webcam video) may take longer to process than the parent entry (e.g., a static screen share). While the script correctly duplicates both parent and child entries, they may not become "ready" on the front end at the same time. (So if you log into the destination front end and only see the parent stream, you may just need to wait longer.) You can confirm successful copying by running a `baseEntry.list` API call with `parentEntryIdEqual` set to the new parent entry’s ID. Be patient! 
 - **If downloads have been enabled for the source entry, this won't be the case for the destination entry.** If a user has gone to the "downloads" tab and offered up flavors for front-end viewers to download, this won't be replicated in the destination. I haven't figured this one out yet!
+- **The script paginates results when retrieving entries**, ensuring it can handle large result sets (>500 entries) without missing any data.
 
-Galen Davis, Senior Education Technology Specialist (gbdavis@ucsd.edu)
+
+
+Galen Davis  
+Senior Education Technology Specialist  
+gbdavis@ucsd.edu  
 UC San Diego
-13 Feburary 2025
+26 April 2025
