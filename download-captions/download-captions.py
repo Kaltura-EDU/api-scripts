@@ -16,11 +16,16 @@ from KalturaClient.Plugins.Caption import KalturaCaptionAssetFilter
 import re
 from datetime import datetime, timezone
 import ssl
+import pysrt
+
 
 # Configuration Variables
 PARTNER_ID = ""
 ADMIN_SECRET = ""
 DOWNLOAD_FOLDER = "captions_download"
+
+# Flag for optional TXT conversion
+CONVERT_TO_TXT = False
 
 
 def get_kaltura_client(partner_id, admin_secret):
@@ -104,6 +109,10 @@ def download_captions(client, captions, entry, counter):
                     with open(file_path, "wb") as file:
                         file.write(response.read())
                     print(f"{counter[0]}. Downloaded: {file_path}")
+                    if CONVERT_TO_TXT:
+                        txt_path = file_path.replace('.srt', '.txt')
+                        convert_srt_to_txt(file_path)
+                        print(f"{counter[0]}. Converted to TXT: {txt_path}")
                     counter[0] += 1
             except ssl.SSLError as ssl_err:
                 print(f"⚠️ SSL error downloading {caption.label} for entry {entry.id}: {ssl_err}")
@@ -111,6 +120,17 @@ def download_captions(client, captions, entry, counter):
 
         except Exception as e:
             print(f"Error downloading caption {caption.id}: {e}")
+
+
+def convert_srt_to_txt(srt_path):
+    txt_path = srt_path.replace('.srt', '.txt')
+    try:
+        subs = pysrt.open(srt_path)
+        with open(txt_path, 'w', encoding='utf-8') as txt_file:
+            for sub in subs:
+                txt_file.write(sub.text + '\n')
+    except Exception as e:
+        print(f"Error converting {srt_path} to TXT: {e}")
 
 
 def main():
@@ -139,6 +159,10 @@ def main():
     if not identifier:
         print("Error: You must provide a valid identifier.")
         return
+
+    convert_choice = input("Also convert SRT files to TXT format? [Y/N]: ").strip().lower()
+    global CONVERT_TO_TXT
+    CONVERT_TO_TXT = convert_choice == 'y'
 
     entries = get_entries(client, method, identifier)
     print(f"{len(entries)} entries found.")
