@@ -18,8 +18,8 @@ from datetime import datetime, timezone
 import ssl
 
 # Configuration Variables
-PARTNER_ID = ""
-ADMIN_SECRET = ""
+# PARTNER_ID = "" DO NOT USE--script will request input
+# ADMIN_SECRET = "" DO NOT USE--script will request input
 DOWNLOAD_FOLDER = "captions_download"
 
 
@@ -114,7 +114,10 @@ def download_captions(client, captions, entry, counter):
 
 
 def main():
-    client = get_kaltura_client(PARTNER_ID, ADMIN_SECRET)
+    partner_id = input("Enter your Partner ID: ").strip()
+    admin_secret = input("Enter your Admin Secret: ").strip()
+
+    client = get_kaltura_client(partner_id, admin_secret)
 
     print("\nHow do you want to find entries?")
     print("[1] A tag")

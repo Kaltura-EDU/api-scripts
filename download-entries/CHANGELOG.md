@@ -1,5 +1,12 @@
 # Changelog – download-entries.py
 
+## [v1.2.0] - 2025-05-05
+### Changed
+- Main function now prompts user for Partner ID and Admin Secret
+- Updated README
+### Removed
+- Commented out global variables for Partner ID and Admin Secret, which are now requested by the main function
+
 ## [v1.1.0] – 2025-03-21
 ### Added
 - `REMOVE_SUFFIX` global variable to optionally clean up filenames by removing "(Source)" and trailing underscores/dashes.
