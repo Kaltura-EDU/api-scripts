@@ -6,8 +6,8 @@ This script allows you to create multiple Kaltura MediaSpace channels in bulk by
 
 * Creates Kaltura channels using the Kaltura API
 * Assigns an owner and adds members to each channel
-* Optionally checks for existing channels to avoid name collisions
-* Validates input data before making changes
+* Checks for channel name duplicates before processing
+* Validates CSV input data before processing
 * Outputs a CSV summary of all created channels, including direct MediaSpace links
 
 ## CSV Input File
@@ -15,7 +15,7 @@ This script allows you to create multiple Kaltura MediaSpace channels in bulk by
 Your input file should be named `channelDetails.csv` and placed in the same
 directory as the script.
 
-### Required Columns
+### Required Columns in CSV (channelDetails.csv)
 
 | Column        | Description                                                              |
 | ------------- | ------------------------------------------------------------------------ |
@@ -34,15 +34,15 @@ Before running the script, you **must** edit the following variables at the top 
 * `ADMIN_SECRET`: Your admin secret key (string)
 * `USER_ID`: Your Kaltura user ID (optional; actions will be associated with this user)
 * `PARENT_ID`: The category ID under which new channels will be created. Usually this is the "channels" category in your MediaSpace instance.
-* `MEDIA_SPACE_BASE_URL`: The base URL of your MediaSpace instance, usually ending in `/channel/`. Example: `https://mediaspace.ucsd.edu/channel/`
+* `MEDIA_SPACE_BASE_URL`: The base URL of your MediaSpace instance, usually ending in `/channel/`. Example: `https://mediaspace.ucsd.edu/channel/`. This is so the output CSV has an accurate channel URL.
 * `FULL_NAME_PREFIX`: The category path prefix used to identify existing channels (e.g. `MediaSpace>site>channels>`)
 
 ## Features
 
 * Validates all rows in the CSV before making any changes
-* Exits gracefully if a duplicate channel name is found
+* Exits the script gracefully if a duplicate channel name is found
 * Accepts empty `members` fields (a warning is shown but processing continues)
-* Displays helpful error messages if required fields are missing or invalid
+* Displays error messages if required fields are missing or invalid
 * Outputs a timestamped CSV with the results of the channel creation process
 
 ## 🦖 Getting Started
