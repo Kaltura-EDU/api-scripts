@@ -20,7 +20,24 @@ Be sure to set the global variables at the top of the script that are specific t
 PARTNER_ID = ""
 ADMIN_SECRET = ""
 USER_ID = ""  # Optional; used for the KS, not required for the channel
+
+# Channel variables
+MEDIA_SPACE_URL = "https://your.mediaspace.domain"
+PARENT_ID =  # Required category ID for the parent of the channel
+PRIVACY_CONTEXT = "MediaSpace"
+CHANNEL_NAME = ""
+CHANNEL_DESCRIPTION = ""
+OWNER = ""
+MEMBERS = ""  # e.g., "user1,user2"
+CHANNEL_PRIVACY = 3
+USER_JOIN_POLICY = 3
+APPEAR_IN_LIST = 3
+INHERITANCE_TYPE = 2
+DEFAULT_PERMISSION_LEVEL = 3
+CONTRIBUTION_POLICY = 2
+MODERATION = 0
 ```
+
 
 ## Channel Configuration Options
 
@@ -32,8 +49,6 @@ USER_ID = ""  # Optional; used for the KS, not required for the channel
 | `CHANNEL_DESCRIPTION`      | `[blank]`   | No        | Optional description for the channel. |
 | `OWNER`                    | `[blank]`   | Yes       | User ID that will be listed as the channel owner. |
 | `MEMBERS`                 | `[blank]`   | No        | Comma-separated list of user IDs to add as members (permission level: Member). |
-| `MODERATORS`              | `[blank]`   | No        | Comma-separated list of user IDs to add as moderators (permission level: Moderator). |
-| `CONTRIBUTORS`            | `[blank]`   | No        | Comma-separated list of user IDs to add as contributors (permission level: Contributor). |
 | `CHANNEL_PRIVACY`          | `3`         | Yes       | 1 = Public, 2 = Visible only to Authenticated Users, 3 = Private |
 | `USER_JOIN_POLICY`         | `3`         | Yes       | 1 = Auto Join, 2 = Request to Join, 3 = Not Allowed |
 | `APPEAR_IN_LIST`           | `3`         | Yes       | 1 = Partner Only, 3 = Category Members Only |
@@ -48,7 +63,8 @@ USER_ID = ""  # Optional; used for the KS, not required for the channel
 At the end of the script execution, you'll see output indicating:
 - The created channel's name and ID
 - The assigned owner
-- Any members, moderators, or contributors that were added
+- Any members that were added
+- The public MediaSpace channel URL (constructed using the channel name and ID)
 
 Example:
 ```
@@ -68,6 +84,7 @@ Script execution complete.
 
 - The `privacyContext` must be set to `"MediaSpace"` for `appearInList` and other entitlement behaviors to work correctly.
 - The script assigns users even if they do not already exist in the Kaltura user list (though some functionality may depend on user creation later).
+- The `MEDIA_SPACE_URL` variable is used to generate a direct link to the new channel after it's created.
 
 
 ## How to Run the Script
@@ -114,4 +131,4 @@ python3 create-channel.py
 
 Galen Davis  
 Senior Education Technology Specialist, UC San Diego  
-Last updated 19 March 2025
+Last updated 7 May 2025
