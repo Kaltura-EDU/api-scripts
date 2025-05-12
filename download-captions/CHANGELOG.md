@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.0] - 2025-04-25
+### Added
+- Optional creation of TXT files from SRT files (stripping out timecode information)
+- Separate numbered progress indicator for TXT file creation
+
 ## [1.1.0] - 2025-04-24
 ### Added
 - Friendly fallback and message for SSL certificate errors.
