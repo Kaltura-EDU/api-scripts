@@ -18,10 +18,11 @@ This script hides captions with a specific label (e.g., "English (auto-generated
 This script requires the following Python packages:
 - `KalturaApiClient`
 - `lxml`
+- `pytz`
 
 Install them using a `requirements.txt` file or directly via pip:
 ```bash
-pip install KalturaApiClient lxml
+pip install -r requirements.txt
 ```
 
 ## Recommended Setup
@@ -34,7 +35,7 @@ source env/bin/activate
 
 2. Install dependencies:
 ```bash
-pip install -r Requirements.txt
+pip install -r requirements.txt
 ```
 
 3. Run the script:
@@ -74,4 +75,4 @@ This script does not delete any captions. It only updates their visibility in th
 Galen Davis  
 Senior Education Technology Specialist  
 UC San Diego  
-20 May 2025
+25 May 2025
