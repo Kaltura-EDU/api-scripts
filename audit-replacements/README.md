@@ -2,11 +2,11 @@
 
 This Python script identifies Kaltura media entries that have been replaced by looking for `media::updatecontent` actions in the audit trail. It compares each replacement timestamp against the original entry's creation time and only includes entries with confirmed replacements in the output file.
 
-## 🔍 Use Case
+## Use Case
 
-Designed primarily for instructional media admins or instructional designers who need to **verify whether media entries were replaced**—e.g., after course revisions or content corrections. Useful for reporting or auditing when changes occurred and who made them.
+At UC San Diego, this script is used by Multimedia Services to flag instructional videos that have been replaced. When faculty or instructional designers request updates to previously delivered media, it's important to track that work for billing and scope management. This tool helps identify which videos were updated and when, so the team can follow up appropriately.
 
-## ✅ What It Does
+## What It Does
 
 - Prompts the user to search by:
   - Tag
