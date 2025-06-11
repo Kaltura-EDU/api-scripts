@@ -21,7 +21,7 @@ At UC San Diego, this script is used by Multimedia Services to flag instructiona
 
 Note: Only entries that have been replaced — meaning they have one or more `media::updatecontent` actions recorded after their creation date — will be included in the resulting Excel file. Entries with no replacement history will be skipped entirely.
 
-## 📦 Output
+## Output
 
 An Excel file named like `2025-06-11-1453_ReplacementsAudit.xlsx`, with the following columns:
 
@@ -31,7 +31,7 @@ An Excel file named like `2025-06-11-1453_ReplacementsAudit.xlsx`, with the foll
 - `user_id`
 - `timestamp` (Pacific Time, suffixed with "PT")
 
-## 🔧 Requirements
+## Requirements
 
 Install dependencies with:
 
@@ -49,7 +49,7 @@ lxml
 openpyxl
 ```
 
-## 🔐 Configuration
+## Configuration
 
 At the top of the script, you must provide:
 
@@ -63,7 +63,7 @@ The script creates an admin session using:
 privileges="all:*,disableentitlement"
 ```
 
-## 🏁 Running the Script
+## Running the Script
 
 From the command line:
 ```bash
