@@ -1,3 +1,4 @@
 KalturaApiClient
 lxml
 pytz
+python-dotenv
