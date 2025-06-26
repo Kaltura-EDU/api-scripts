@@ -45,7 +45,7 @@ python add-chapters.py
 
 Each chapter will be added as a `KalturaThumbCuePoint` with subtype `CHAPTER`.
 
-## 🔐 Notes
+## Notes
 
 - The script loads credentials from `.env`. Do not commit `.env` to version control.
 - A `.gitignore` file should exclude `.env`, `venv/`, and `__pycache__/`.
