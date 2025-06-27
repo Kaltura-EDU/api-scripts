@@ -1,4 +1,5 @@
 # generated files
+/delete-flavors/*.csv
 /report-count-duration/*.csv
 
 ### Python template
