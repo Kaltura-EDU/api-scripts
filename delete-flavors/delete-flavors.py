@@ -1,18 +1,19 @@
 """
-This script permanently deletes one or more Kaltura media entries based on
+This script permanently deletes one or more Kaltura flavors for media entries based on
 entry IDs provided by the user. It authenticates using an admin session,
 retrieves entry metadata for confirmation, and writes a report to a timestamped
 CSV file before deletion.
 
 Key features:
 - Prompts for comma-separated entry IDs to delete.
-- Retrieves and displays entry metadata (name, owner, duration).
+- Retrieves and displays entry metadata (name, owner, flavor ids, flavors to delete).
 - Exports a report CSV listing all entries and deletion status.
 - Skips any entries that cannot be retrieved.
 - Requires user confirmation before performing deletions.
 
 Usage:
-    1. Enter your parnter ID and your Kaltura instance's admin secret below.
+    1. Enter your parnter ID and your Kaltura instance's admin secret in the .env file,
+       located in the same directory as this script, and save the file.
     2. Run the script and enter entry IDs when prompted.
     3. To proceed with deletion, type "DELETE" when prompted for confirmation.
 """
