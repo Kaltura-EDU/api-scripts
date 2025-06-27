@@ -1,5 +1,5 @@
 """
-This script permanently deletes one or more Kaltura flavors for media entries based on
+This script permanently deletes all flavors except the source one for media entries based on
 entry IDs provided by the user. It authenticates using an admin session,
 retrieves entry metadata for confirmation, and writes a report to a timestamped
 CSV file before deletion.
