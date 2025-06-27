@@ -72,6 +72,10 @@ def clean_filename(filename):
 OWNER_ID = input("Enter an owner user ID (optional): ").strip()
 TAG = input("Enter a tag (optional): ").strip()
 CATEGORY_ID = input("Enter a category ID (optional): ").strip()
+# Prompt the user for flavor size
+FLAVOR_SIZE = input("Do you want to calculate flavor size? (slower): ").strip()
+if FLAVOR_SIZE:
+    FLAVOR_SOURCE_NAME = input("Do you want to know the name of the source file? (slower): ").strip()
 # Prompt user for date range
 start_input = input(
     "Enter a START DATE (YYYY-MM-DD) [press Enter " "to search from the beginning]: "
@@ -129,7 +133,6 @@ client.setKs(ks)
 def parse_date(date_str):
     return datetime.strptime(date_str, "%Y-%m-%d")
 
-
 def get_interval_ranges(start_date, end_date, interval_type):
     current = start_date
 
@@ -159,7 +162,7 @@ def fetch_entries_for_interval(start_ts, end_ts):
     entry_count = 0
     total_flavor_size = 0
     pager = KalturaFilterPager()
-    pager.pageSize = 500
+    pager.pageSize = 500 # it's the maximum allowed
     pager.pageIndex = 1
 
     filter = KalturaMediaEntryFilter()
@@ -201,41 +204,47 @@ def fetch_entries_for_interval(start_ts, end_ts):
         if not result.objects:
             break
 
+        print(
+            f"Processing page index {pager.pageIndex} that contains {len(result.objects)} entries..."
+        )
+
         for entry in result.objects:
             # Default to None in case there's an error
             original_filename = None
+            flavor_count = 0
+            flavor_size_sum = 0
 
-            try:
-                # Get flavor assets for this entry
-                flavor_filter = KalturaFlavorAssetFilter()
-                flavor_filter.entryIdEqual = entry.id
-                flavor_list = client.flavorAsset.list(flavor_filter)
+            if FLAVOR_SIZE:
+                try:
+                    # Get flavor assets for this entry
+                    flavor_filter = KalturaFlavorAssetFilter()
+                    flavor_filter.entryIdEqual = entry.id
+                    flavor_list = client.flavorAsset.list(flavor_filter)
 
-                flavor_count = len(flavor_list.objects)
-                flavor_size_sum = sum(fa.size for fa in flavor_list.objects)
+                    flavor_count = len(flavor_list.objects)
+                    flavor_size_sum = sum(fa.size for fa in flavor_list.objects)
 
-                # Find the original flavor
-                source_flavor = next(
-                    (fa for fa in flavor_list.objects if fa.isOriginal), None
-                )
+                    # Find the original flavor
+                    source_flavor = next(
+                        (fa for fa in flavor_list.objects if fa.isOriginal), None
+                    )
 
-                if source_flavor:
-                    url = client.flavorAsset.getUrl(source_flavor.id)
+                    if FLAVOR_SOURCE_NAME and source_flavor:
+                        url = client.flavorAsset.getUrl(source_flavor.id)
 
-                    # More flexible regex that matches anything after
-                    # /fileName/ up to next /
-                    match = re.search(r"/fileName/([^/]+)/", url)
+                        # More flexible regex that matches anything after
+                        # /fileName/ up to next /
+                        match = re.search(r"/fileName/([^/]+)/", url)
 
-                    if match:
-                        raw_filename = match.group(1)
-                        original_filename = clean_filename(raw_filename)
+                        if match:
+                            raw_filename = match.group(1)
+                            original_filename = clean_filename(raw_filename)
 
-            except Exception as e:
-                # Optional: log error for edge cases
-                print(f"Error retrieving filename for entry {entry.id}: {e}")
-                original_filename = None
-                flavor_count = 0
-                flavor_size_sum = 0
+                except Exception as e:
+                    print(f"Error retrieving filename for entry {entry.id}: {e}")
+
+            else:
+                flavor_count = len(entry.flavorParamsIds.split(','))
 
             all_entries.append(
                 {
