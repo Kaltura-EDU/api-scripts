@@ -25,7 +25,15 @@ pip install -r requirements.txt
 
 ## Running the Script
 Before beginning, you'll need to know the category IDs of the original Media Gallery and the destination Media Gallery.
-1. From the terminal, within the script's folder, run:
+1. From the terminal, navigate to the script's folder, e.g.
+```bash
+cd /Users/username/Documents/kalturaAPI/duplicate-playlists
+```
+2. If needed, activate your virtual environment:
+```bash
+source venv/bin/activate
+```
+3. From the terminal, within the script's folder, run:
 ```bash
 python3 duplicate-playlists.py
 ```
