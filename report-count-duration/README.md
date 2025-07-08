@@ -63,10 +63,17 @@ The **detailed CSV** includes the following columns:
 - `name`
 - `duration_sec`
 - `duration` (formatted as HH:MM:SS)
+- `media_type`
 - `created_at` (formatted in local time)
 - `updated_at` (formatted in local time)
+- `lastplayed_at` (formatted in local time)
+- `plays`
+- `categories`
+- `tags`
 - `owner_id` (the Kaltura user ID of the entry owner)
 - `original_filename` (cleaned version of the uploaded source file name, extracted from the flavorAsset URL)
+- `flavor_count`
+- `flavor_size_sum` (expressed in KB)
 
 
 # Timezone Configuration
