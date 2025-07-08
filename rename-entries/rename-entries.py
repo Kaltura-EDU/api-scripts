@@ -3,8 +3,6 @@ This script batch-renames Kaltura media entries based on entry IDs, tags, or
 category memberships.
 
 Usage:
-- Replace the value of "partner_id" and "admin_secret" with your own
-instance's credentials.
 - At a command prompt, type "python3 rename-entries.py". 
 
 Required modules: KalturaApiClient, lxml
@@ -22,23 +20,13 @@ from KalturaClient.Plugins.Core import (
 from KalturaClient.exceptions import KalturaException
 
 
-def get_kaltura_client():
-    partner_id = ""
-    admin_secret = ""
-    service_url = "https://www.kaltura.com/"
-
+def get_kaltura_client(partner_id, admin_secret):
     config = KalturaConfiguration(partner_id)
-    config.serviceUrl = service_url
+    config.serviceUrl = "https://www.kaltura.com/"
     client = KalturaClient(config)
-    privileges = "all:*,disableentitlement"
-
     ks = client.session.start(
-        admin_secret,
-        userId="admin",
-        type=KalturaSessionType.ADMIN,
-        partnerId=partner_id,
-        expiry=None,
-        privileges=privileges
+        admin_secret, "admin", KalturaSessionType.ADMIN, partner_id,
+        privileges="all:*,disableentitlement"
     )
     client.setKs(ks)
     return client
@@ -101,8 +89,11 @@ def get_entries_by_category(client, category_id):
     return entries
 
 
-if __name__ == "__main__":
-    client = get_kaltura_client()
+def main():
+    # Prompt for PID and Admin Secret
+    partner_id = input("Enter your Partner ID: ").strip()
+    admin_secret = input("Enter your Admin Secret: ").strip()
+    client = get_kaltura_client(partner_id, admin_secret)
 
     # Prompt the user for how they want to select entries
     print("How do you want to select entries?")
@@ -205,3 +196,6 @@ if __name__ == "__main__":
             writer.writerow([e.id, original_title, new_title])
 
     print(f"Renaming complete. Results saved to {csv_filename}.")
+
+if __name__ == "__main__":
+    main()

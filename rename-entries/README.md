@@ -8,14 +8,12 @@ This script allows you to rename Kaltura media entries in batches. You can add s
 # One-Time Instructions
 1. Download **rename-entries.py** and **requirements.txt** to your computer.
 2. Open **rename-entries.py** with a text editor.
-3. Add values for `partner_id` and `admin_secret` based on your own instance of Kaltura.
-4. Save the changes.
-5. Open a command line interface, such as Terminal on a Mac or Command Prompt in Windows.
-6. Navigate to wherever you put your files (e.g. `cd /path/to/project`).
-7. Set up a virtual environment if you haven't already: `python3 -m venv venv`
-8. Activate your virtual environment (Windows: `venv\\Scripts\\activate` Mac: `source venv/bin/activate`)
-9. Install the needed modules: `pip install -r requirements.txt`
-10. Run the script: `python3 rename-entries.py`
+3. Open a command line interface, such as Terminal on a Mac or Command Prompt in Windows.
+4. Navigate to wherever you put your files (e.g. `cd /path/to/project`).
+5. Set up a virtual environment if you haven't already: `python3 -m venv venv`
+6. Activate your virtual environment (Windows: `venv\\Scripts\\activate` Mac: `source venv/bin/activate`)
+7. Install the needed modules: `pip install -r requirements.txt`
+8. Run the script: `python3 rename-entries.py`
 
 
 Galen Davis, Senior Education Technology Specialist

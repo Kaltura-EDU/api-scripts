@@ -24,18 +24,16 @@ The script downloads entries sequentially (not threaded) for simplicity and reli
 ## How to Run the Script
 1. Download `download-entries.py` and `requirements.txt` into the same folder.
 2. Open `download-entries.py` in a text editor.
-3. Add values for `PARTNER_ID` and `ADMIN_SECRET` based on your own Kaltura instance.
-4. Save your changes.
-5. Open a terminal or command line window.
-6. Navigate to the folder where the script is saved:
+3. Open a terminal or command line window.
+4. Navigate to the folder where the script is saved:
    ```
    cd /path/to/your/folder
    ```
-7. Set up a virtual environment (optional but recommended):
+5. Set up a virtual environment (optional but recommended):
    ```
    python3 -m venv venv
    ```
-8. Activate the virtual environment:
+6. Activate the virtual environment:
    - On macOS/Linux:
      ```
      source venv/bin/activate
@@ -44,11 +42,11 @@ The script downloads entries sequentially (not threaded) for simplicity and reli
      ```
      venv\Scripts\activate
      ```
-9. Install the required Python modules:
+7. Install the required Python modules:
    ```
    pip install -r requirements.txt
    ```
-10. Run the script:
+8. Run the script:
     ```
     python3 download-entries.py
     ```
@@ -58,4 +56,11 @@ The script downloads entries sequentially (not threaded) for simplicity and reli
 Galen Davis  
 Senior Education Technology Specialist  
 UC San Diego  
-Last updated 21 March 2025
+
+*and* 
+
+Andy Clark  
+Systems Administrator, Learning Systems  
+Baylor University  
+
+*Last updated 2025-05-05*
