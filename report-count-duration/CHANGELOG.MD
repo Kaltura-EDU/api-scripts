@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5 – 25 June 2025
+- Added other fields to CSV exports: `media_type, lastplayed_at, plays, categories, tags, flavor_count, flavor_size_sum`
+- Added `python-dotenv` for better managing the Kaltura secrets
+
 ## v1.4 – 21 March 2025
 - Added optional runtime filter for `owner_id`, allowing searches by media entry owner
 - Introduced `EARLIEST_START_DATE` global variable to support full-repository searches

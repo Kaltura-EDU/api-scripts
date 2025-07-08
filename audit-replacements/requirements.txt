@@ -1,4 +1,5 @@
+pytz
+pandas
 KalturaApiClient
 lxml
-pytz
-python-dotenv
+openpyxl

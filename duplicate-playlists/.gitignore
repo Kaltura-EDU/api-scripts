@@ -1,0 +1,18 @@
+# Python build artifacts
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+
+# macOS cruft
+.DS_Store
+
+# Environment variables
+.env
+
+# Output files
+*.csv
+
+# Allow example env file
+!.env.example
