@@ -67,7 +67,7 @@ privileges="all:*,disableentitlement"
 
 From the command line:
 ```bash
-python3 check-replacements.py
+python3 audit-replacements.py
 ```
 
 Then follow the prompt to enter your preferred search method.
