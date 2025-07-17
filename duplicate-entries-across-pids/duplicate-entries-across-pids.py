@@ -53,10 +53,10 @@ from KalturaClient.Plugins.Transcript import KalturaTranscriptAsset
 from KalturaClient.exceptions import KalturaException
 
 # ---- CONFIGURABLE VARIABLES ----
-SOURCE_PID = ""
-SOURCE_ADMIN_SECRET = ""
-DEST_PID = ""
-DEST_ADMIN_SECRET = ""
+# SOURCE_PID = "" DO NOT USE--script will prompt for this
+# SOURCE_ADMIN_SECRET = "" DO NOT USE--script will prompt for this
+# DEST_PID = "" DO NOT USE--script will prompt for this
+# DEST_ADMIN_SECRET = "" DO NOT USE--script will prompt for this
 COPY_QUIZ_ANSWERS = False
 COPY_ASR_CAPTIONS = True
 CAPTION_LABEL = "English (auto-generated)"
@@ -923,8 +923,15 @@ def write_to_csv(entries):
 
 
 def main():
-    client_source = get_kaltura_client(SOURCE_PID, SOURCE_ADMIN_SECRET)
-    client_dest = get_kaltura_client(DEST_PID, DEST_ADMIN_SECRET)
+    # Prompt for source PID and Admin Secret
+    source_pid = input("Enter the Source Partner ID: ").strip()
+    source_admin_secret = input("Enter the Source Admin Secret: ").strip()
+    # Prompt for destination PID and Admin Secret
+    dest_pid = input("Enter the Destination Partner ID: ").strip()
+    dest_admin_secret = input("Enter the Destination Admin Secret: ").strip()
+
+    client_source = get_kaltura_client(source_pid, source_admin_secret)
+    client_dest = get_kaltura_client(dest_pid, dest_admin_secret)
 
     # Ask the user how they want to select entries
     print("\nWhat do you want to use to duplicate entries?")

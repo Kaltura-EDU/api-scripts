@@ -44,21 +44,12 @@ QUESTION_TYPES = {
 }
 
 
-def get_kaltura_client():
-    partner_id = ""  # Provide your partner ID
-    admin_secret = ""  # Provide your admin secret
-    service_url = "https://www.kaltura.com/"
-
+def get_kaltura_client(partner_id, admin_secret):
     config = KalturaConfiguration(partner_id)
-    config.serviceUrl = service_url
+    config.serviceUrl = "https://www.kaltura.com/"
     client = KalturaClient(config)
-
     ks = client.session.start(
-        admin_secret,
-        userId="admin",
-        type=KalturaSessionType.ADMIN,
-        partnerId=partner_id,
-        expiry=None,
+        admin_secret, "admin", KalturaSessionType.ADMIN, partner_id,
         privileges="all:*,disableentitlement"
     )
     client.setKs(ks)
@@ -234,7 +225,10 @@ def list_and_delete_user_entries(client, entry_ids, user_ids):
 
 
 def main():
-    client = get_kaltura_client()
+    partner_id = input("Enter your Partner ID: ").strip()
+    admin_secret = input("Enter your Admin Secret: ").strip()
+
+    client = get_kaltura_client(partner_id,admin_secret)
 
     # Step 1: Prompt for entry IDs
     entry_ids_input = input(

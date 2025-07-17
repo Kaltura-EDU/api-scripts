@@ -18,25 +18,13 @@ from KalturaClient.Plugins.CuePoint import KalturaCuePointFilter
 from KalturaClient.exceptions import KalturaException
 
 
-def get_kaltura_client():
-    partner_id = ""
-    admin_secret = ""
-    service_url = "https://www.kaltura.com/"
-
+def get_kaltura_client(partner_id, admin_secret):
     config = KalturaConfiguration(partner_id)
-    config.serviceUrl = service_url
-    client = KalturaClient(config)  
-
-    # Required privileges
-    privileges = "all:*,disableentitlement"
-
+    config.serviceUrl = "https://www.kaltura.com/"
+    client = KalturaClient(config)
     ks = client.session.start(
-        admin_secret,
-        userId="admin",
-        type=KalturaSessionType.ADMIN,
-        partnerId=partner_id,
-        expiry=None,
-        privileges=privileges
+        admin_secret, "admin", KalturaSessionType.ADMIN, partner_id,
+        privileges="all:*,disableentitlement"
     )
     client.setKs(ks)
     return client
@@ -119,8 +107,12 @@ def clone_entry_with_quizzes(client, original_entry_id, user_tag=None):
     )
 
 
-if __name__ == "__main__":
-    client = get_kaltura_client()
+def main():
+    partner_id = input("Enter your Partner ID: ").strip()
+    admin_secret = input("Enter your Admin Secret: ").strip()
+
+    client = get_kaltura_client(partner_id,admin_secret)
+
     entry_ids_input = input("Enter comma-delimited list of entry IDs: ")
     entry_ids = [e.strip() for e in entry_ids_input.split(",") if e.strip()]
 
@@ -157,3 +149,6 @@ if __name__ == "__main__":
                 print(f"Unexpected error with entry {eid}: {ex}")
 
     print(f"All done! Results saved to {csv_filename}.")
+
+if __name__ == "__main__":
+    main()

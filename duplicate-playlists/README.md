@@ -5,7 +5,8 @@ This script duplicates all Kaltura playlists that are associated with a particul
 ## Initial setup (only needed once)
 1. Download all of the files for this project and put them in their own folder on your computer.
 2. Rename `.env.example` to just `.env`. The .env file stores sensitive configuration values like your Kaltura partner ID, admin secret, and API URL. These values are loaded securely when the script runs.
-3. Open .env in a text editor and assign values to all the variables based on your Kaltura instance.
+3. Open .env in a text editor and assign values to all the variables based on your Kaltura instance. Note: One required value in the `.env` file is the ID of the custom metadata profile named `CategoryAdditionalInfo`. You can find this ID by logging into the KMC and going to **Settings > Custom Data**, then locating the profile in the list and copying its ID.
+
 4. Open a Terminal window and navigate to the folder in which the script is stored, e.g.
 ```bash
 cd /Users/username/Documents/kalturaAPI/duplicate-playlists
@@ -25,7 +26,15 @@ pip install -r requirements.txt
 
 ## Running the Script
 Before beginning, you'll need to know the category IDs of the original Media Gallery and the destination Media Gallery.
-1. From the terminal, within the script's folder, run:
+1. From the terminal, navigate to the script's folder, e.g.
+```bash
+cd /Users/username/Documents/kalturaAPI/duplicate-playlists
+```
+2. If needed, activate your virtual environment:
+```bash
+source venv/bin/activate
+```
+3. From the terminal, within the script's folder, run:
 ```bash
 python3 duplicate-playlists.py
 ```

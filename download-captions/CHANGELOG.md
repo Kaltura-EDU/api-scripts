@@ -1,5 +1,6 @@
 # Changelog
 
+
 ## [1.2.0] - 2025-04-25
 ### Added
 - Optional creation of TXT files from SRT files (stripping out timecode information)
