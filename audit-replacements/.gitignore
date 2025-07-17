@@ -1,0 +1,29 @@
+# Ignore personalized environment variables
+.env
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+.Python
+
+# macOS system files
+.DS_Store
+
+# Excel output files
+*.xlsx
+
+# Log files
+*.log
+
+# Jupyter notebook checkpoints (just in case)
+.ipynb_checkpoints/
+
+# VSCode settings
+.vscode/

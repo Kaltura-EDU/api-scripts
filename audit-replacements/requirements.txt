@@ -1,5 +1,0 @@
-pytz
-pandas
-KalturaApiClient
-lxml
-openpyxl
