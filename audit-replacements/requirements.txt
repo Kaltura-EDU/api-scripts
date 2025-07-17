@@ -1,0 +1,6 @@
+pytz
+pandas
+KalturaApiClient
+lxml
+openpyxl
+python-dotenv
