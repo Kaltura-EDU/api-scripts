@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Delete Non‑Source Flavors – safer, flexible bulk tool.
+Delete Non-Source Flavors - safer, flexible bulk tool.
 
-Deletes all non‑source flavors for selected entries, preserving the source flavor 
-(using isOriginal, tags, or largest file fallback). Skips single‑flavor entries 
-and writes preview/results CSV reports.
+Deletes all non-source flavors for selected entries, preserving the source
+flavor (using isOriginal, tags, or largest file fallback). Skips single-flavor
+entries and writes preview/results CSV reports.
 """
 
 import csv
@@ -18,17 +18,16 @@ from dotenv import load_dotenv, find_dotenv
 
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
-    KalturaSessionType,
-    KalturaFilterPager,
-    KalturaMediaEntryFilter,
+    KalturaSessionType, KalturaFilterPager, KalturaMediaEntryFilter,
+    KalturaFlavorAssetFilter
 )
-from KalturaClient.Plugins.Core import KalturaFlavorAssetFilter
-from KalturaClient.Plugins.Core import KalturaMediaEntryFilter
+
 from KalturaClient.exceptions import KalturaException
 
 
 # ==== Env / config ===========================================================
 load_dotenv(find_dotenv())
+
 
 def require_env_int(name: str) -> int:
     raw = os.getenv(name, "").strip()
@@ -37,14 +36,17 @@ def require_env_int(name: str) -> int:
         sys.exit(2)
     return int(raw)
 
+
 def get_env_csv(name: str) -> List[str]:
     raw = os.getenv(name, "") or ""
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     return parts
 
+
 def now_stamp() -> str:
     # e.g., 2025-08-28-1412 (YYYY-MM-DD-HHMM, 24-hour clock)
     return datetime.now().strftime("%Y-%m-%d-%H%M")
+
 
 PARTNER_ID = require_env_int("PARTNER_ID")
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
@@ -63,19 +65,24 @@ CATEGORY_IDS = get_env_csv("CATEGORY_IDS")
 TS = now_stamp()
 
 # Ensure outputs go into a "reports" subfolder alongside this script
-REPORTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
+REPORTS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "reports"
+    )
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
-# Filenames start with the timestamp, e.g., 2025-08-28-1412_deleted_flavors_PREVIEW.csv
+# Filenames start with the timestamp,
+# e.g., 2025-08-28-1412_deleted_flavors_PREVIEW.csv
 PREVIEW_CSV = os.path.join(REPORTS_DIR, f"{TS}_deleted_flavors_PREVIEW.csv")
-RESULT_CSV  = os.path.join(REPORTS_DIR, f"{TS}_deleted_flavors_RESULT.csv")
-
+RESULT_CSV = os.path.join(REPORTS_DIR, f"{TS}_deleted_flavors_RESULT.csv")
 
 # ==== Kaltura client bootstrap ===============================================
 cfg = KalturaConfiguration(PARTNER_ID)
 cfg.serviceUrl = SERVICE_URL
 client = KalturaClient(cfg)
-ks = client.session.start(ADMIN_SECRET, USER_ID, KalturaSessionType.ADMIN, PARTNER_ID, privileges=PRIVILEGES)
+ks = client.session.start(
+    ADMIN_SECRET, USER_ID, KalturaSessionType.ADMIN, PARTNER_ID,
+    privileges=PRIVILEGES
+    )
 client.setKs(ks)
 
 
@@ -91,10 +98,12 @@ def _as_int(x) -> int:
         except Exception:
             return 0
 
+
 def pick_source_flavor(flavor_objects) -> Tuple[Optional[str], Optional[str]]:
     """
-    Return (source_flavor_id, reason) where reason in {'isOriginal','tags:source','largest'}.
-    If none can be determined, returns (None, None).
+    Return (source_flavor_id, reason) where reason in
+    {'isOriginal','tags:source','largest'}. If none can be determined, returns
+    (None, None).
     """
     if not flavor_objects:
         return None, None
@@ -140,8 +149,8 @@ def list_flavors(entry_id: str):
 
 def list_children(entry_id: str):
     """
-    Return a list of child entries (multi-stream components) for a given parent entry.
-    Uses media.list with parentEntryIdEqual.
+    Return a list of child entries (multi-stream components) for a given
+    parent entry. Uses media.list with parentEntryIdEqual.
     """
     mf = KalturaMediaEntryFilter()
     mf.parentEntryIdEqual = entry_id
@@ -153,7 +162,10 @@ def list_children(entry_id: str):
         try:
             resp = client.media.list(mf, pager)
         except KalturaException as ex:
-            print(f"[WARN] media.list (children) failed for parent {entry_id} on page {page}: {ex}")
+            print(
+                f"[WARN] media.list (children) failed for parent {entry_id} "
+                f"on page {page}: {ex}"
+                )
             break
         if not resp or not getattr(resp, "objects", None):
             break
@@ -213,18 +225,22 @@ def write_csv(path: str, rows: List[Dict[str, str]]):
         # still write header
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=[
-                "role","entry_id","parent_entry_id","entry_name","owner_user_id","conversion_profile_id",
-                "total_flavors","source_flavor_id","source_reason","flavors_to_delete",
-                "flavors_deleted_count","bytes_saved","is_multistream","child_count","status","error"
+                "role", "entry_id", "parent_entry_id", "entry_name",
+                "owner_user_id", "conversion_profile_id", "total_flavors",
+                "source_flavor_id", "source_reason", "flavors_to_delete",
+                "flavors_deleted_count", "bytes_saved", "is_multistream",
+                "child_count", "status", "error"
             ])
             w.writeheader()
         return
 
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=[
-            "role","entry_id","parent_entry_id","entry_name","owner_user_id","conversion_profile_id",
-            "total_flavors","source_flavor_id","source_reason","flavors_to_delete",
-            "flavors_deleted_count","bytes_saved","is_multistream","child_count","status","error"
+            "role", "entry_id", "parent_entry_id", "entry_name",
+            "owner_user_id", "conversion_profile_id", "total_flavors",
+            "source_flavor_id", "source_reason", "flavors_to_delete",
+            "flavors_deleted_count", "bytes_saved", "is_multistream",
+            "child_count", "status", "error"
         ])
         w.writeheader()
         w.writerows(rows)
@@ -232,8 +248,8 @@ def write_csv(path: str, rows: List[Dict[str, str]]):
 
 def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
     """
-    Builds preview rows for a single parent entry, including any children (multi‑stream).
-    Returns a list of row dicts (parent first, then children).
+    Builds preview rows for a single parent entry, including any children
+    (multi‑stream). Returns a list of row dicts (parent first, then children).
     """
     rows: List[Dict[str, str]] = []
 
@@ -271,7 +287,10 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
     children = list_children(parent_id)
     is_multi = "YES" if children else "NO"
     if is_multi == "YES":
-        print(f"[INFO] Entry {parent_id} has {len(children)} child(ren); will apply deletion plan to each.")
+        print(
+            f"[INFO] Entry {parent_id} has {len(children)} child(ren); will "
+            f"apply deletion plan to each."
+            )
 
     if total <= 1:
         rows.append({
@@ -459,21 +478,34 @@ def main():
         preview_rows.extend(rows_for_entry)
 
     write_csv(PREVIEW_CSV, preview_rows)
-    print(f"[INFO] Wrote pre‑deletion plan → {PREVIEW_CSV}")
+    print(f"[INFO] Wrote pre-deletion plan → {PREVIEW_CSV}")
 
     # Any actually deletable entries?
-    ready = [r for r in preview_rows if r["status"] == "READY" and r["flavors_to_delete"]]
+    ready = [
+        r for r in preview_rows if r["status"] == "READY"
+        and r["flavors_to_delete"]
+        ]
     if not ready:
         print("[INFO] No entries require deletion. Exiting.")
         return
 
     parents_ready = sum(1 for r in ready if r.get("role") == "PARENT")
     children_ready = sum(1 for r in ready if r.get("role") == "CHILD")
-    total_flavors_to_delete = sum(int(r.get("flavors_deleted_count","0") or 0) for r in ready)
-    total_bytes_to_save = sum(_as_int(r.get("bytes_saved","0")) for r in ready)
-    print(f"[PLAN] Parents ready: {parents_ready} | Children ready: {children_ready} | Flavors to delete: {total_flavors_to_delete} | Bytes potentially saved: {total_bytes_to_save}")
+    total_flavors_to_delete = sum(
+        int(r.get("flavors_deleted_count", "0") or 0) for r in ready
+        )
+    total_bytes_to_save = sum(
+        _as_int(r.get("bytes_saved", "0")) for r in ready
+        )
+    print(
+        f"[PLAN] Parents ready: {parents_ready} | Children ready: "
+        f"{children_ready} | Flavors to delete: {total_flavors_to_delete} "
+        f"| Bytes potentially saved: {total_bytes_to_save}"
+        )
 
-    confirm = input("\nType 'DELETE' to permanently delete the listed flavors: ").strip().upper()
+    confirm = input(
+        "\nType 'DELETE' to permanently delete the listed flavors: "
+        ).strip().upper()
     if confirm != "DELETE":
         print("[ABORTED] No deletions performed.")
         return
@@ -497,14 +529,23 @@ def main():
                 try:
                     client.flavorAsset.delete(flv)
                     deleted_count += 1
-                    print(f"[DELETED] {flv} for entry {eid} (role={r.get('role','')}, parent={r.get('parent_entry_id','')})")
+                    print(
+                        f"[DELETED] {flv} for entry {eid} "
+                        f"(role={r.get('role', '')}, "
+                        f"parent={r.get('parent_entry_id', '')})"
+                        )
                 except KalturaException as ex:
                     # continue but mark error
                     error = f"{error}; delete {flv} failed: {ex}"
         except Exception as ex:
             error = f"{error}; unexpected error: {ex}"
 
-        new_status = "DELETED" if deleted_count == int(r["flavors_deleted_count"]) and not error else "PARTIAL" if deleted_count > 0 else "FAILED"
+        if deleted_count == int(r["flavors_deleted_count"]) and not error:
+            new_status = "DELETED"
+        elif deleted_count > 0:
+            new_status = "PARTIAL"
+        else:
+            new_status = "FAILED"
         rr = dict(r)
         rr["flavors_deleted_count"] = str(deleted_count)
         rr["status"] = new_status
@@ -514,6 +555,7 @@ def main():
     write_csv(RESULT_CSV, result_rows)
     print(f"\n[INFO] Wrote results → {RESULT_CSV}")
     print("[DONE]")
+
 
 if __name__ == "__main__":
     main()
