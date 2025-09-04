@@ -1,0 +1,34 @@
+
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environment
+venv/
+.env
+.env.*
+
+# Logs
+*.log
+
+# Captions output
+captions_download/
+
+# IDE/project files
+.vscode/
+.idea/
+.DS_Store
+
+# Jupyter/IPython checkpoints
+.ipynb_checkpoints/
+
+# System files
+Thumbs.db
