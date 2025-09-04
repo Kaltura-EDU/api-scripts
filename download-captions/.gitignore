@@ -14,7 +14,6 @@ build/
 # Virtual environment
 venv/
 .env
-.env.*
 
 # Logs
 *.log
