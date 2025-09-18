@@ -1,0 +1,5 @@
+KalturaApiClient
+python-dotenv
+pandas
+requests
+lxml

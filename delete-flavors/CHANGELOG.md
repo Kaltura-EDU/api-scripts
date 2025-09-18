@@ -21,3 +21,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Multi-stream child entry processing with onscreen notification.
 - Expanded CSV report with explicit columns: entry ID, name, deleted flavors count, and space saved.
 - Onscreen feedback improvements including progress updates and multistream notifications.
+
+## [1.2.0] - 2025-09-18
+
+### Changed
+- Support CSV input: can now supply a `CSV_FILE` and `ENTRY_ID_COLUMN_HEADER` in the `.env` to load entry IDs from a CSV.
+- Improved header parsing: `ENTRY_ID_COLUMN_HEADER` normalizes column names (strip quotes / whitespace) so CSV headers with quotation marks work.
+- Updated instructions in README: added setup steps (virtualenv, dependencies, etc.).

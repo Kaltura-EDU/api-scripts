@@ -24,8 +24,9 @@ from KalturaClient.Plugins.Core import (
 
 from KalturaClient.exceptions import KalturaException
 
-
-# ==== Env / config ===========================================================
+# =============================================================================
+# Env / config ----------------------------------------------------------------
+# =============================================================================
 load_dotenv(find_dotenv())
 
 
@@ -62,6 +63,40 @@ ENTRY_IDS = get_env_csv("ENTRY_IDS")
 TAGS = get_env_csv("TAGS")
 CATEGORY_IDS = get_env_csv("CATEGORY_IDS")
 
+# Support for CSV-based entry ID selection
+CSV_FILENAME = os.getenv("CSV_FILENAME", "").strip()
+ENTRY_ID_COLUMN_HEADER = os.getenv("ENTRY_ID_COLUMN_HEADER", "").strip()
+# =============================================================================
+# Helper for loading entry IDs from CSV ---------------------------------------
+# =============================================================================
+
+
+def load_entry_ids_from_csv() -> List[str]:
+    """
+    Loads entry IDs from the specified CSV file and column.
+    Returns a list of non-empty entry IDs (as strings).
+    """
+    if not CSV_FILENAME or not ENTRY_ID_COLUMN_HEADER:
+        return []
+    # Path relative to script directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(script_dir, CSV_FILENAME)
+    entry_ids = []
+    try:
+        with open(csv_path, "r", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            # Normalize headers: strip surrounding quotes and whitespace
+            reader.fieldnames = [h.strip().strip('"') for h in reader.fieldnames]
+            for row in reader:
+                eid = (row.get(ENTRY_ID_COLUMN_HEADER, "") or "").strip()
+                if eid:
+                    entry_ids.append(eid)
+    except Exception as ex:
+        print(f"[ERROR] Failed to load entry IDs from CSV: {csv_path}: {ex}", file=sys.stderr)
+        sys.exit(2)
+    return entry_ids
+
+
 TS = now_stamp()
 
 # Ensure outputs go into a "reports" subfolder alongside this script
@@ -85,8 +120,10 @@ ks = client.session.start(
     )
 client.setKs(ks)
 
+# =============================================================================
+# Utilities -------------------------------------------------------------------
+# =============================================================================
 
-# ==== Utilities ==============================================================
 
 def _as_int(x) -> int:
     try:
@@ -101,9 +138,10 @@ def _as_int(x) -> int:
 
 def pick_source_flavor(flavor_objects) -> Tuple[Optional[str], Optional[str]]:
     """
+
     Return (source_flavor_id, reason) where reason in
-    {'isOriginal','tags:source','largest'}. If none can be determined, returns
-    (None, None).
+    {'isOriginal','tags:source','largest'}.
+    If none can be determined, returns (None, None).
     """
     if not flavor_objects:
         return None, None
@@ -179,8 +217,26 @@ def list_children(entry_id: str):
 def iter_selected_entries() -> List:
     """
     Return a list of KalturaMediaEntry objects that match the selection.
+    Supports CSV mode if CSV_FILENAME and ENTRY_ID_COLUMN_HEADER are set.
     """
     selected = []
+
+    # CSV mode: overrides all other selection methods
+    if CSV_FILENAME and ENTRY_ID_COLUMN_HEADER:
+        entry_ids_from_csv = load_entry_ids_from_csv()
+        print(
+            "[INFO] CSV mode: Using {} entry IDs from '{}' (column '{}'). "
+            "This overrides ENTRY_IDS, TAGS, and CATEGORY_IDS.".format(
+                len(entry_ids_from_csv), CSV_FILENAME, ENTRY_ID_COLUMN_HEADER
+            )
+        )
+        for eid in entry_ids_from_csv:
+            try:
+                e = client.media.get(eid)
+                selected.append(e)
+            except Exception as ex:
+                print(f"[WARN] media.get failed for {eid}: {ex}")
+        return selected
 
     # Shortcut: explicit ENTRY_IDS
     if ENTRY_IDS:
@@ -278,7 +334,9 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             "is_multistream": "",
             "child_count": "",
             "status": "ERROR",
-            "error": f"flavorAsset.list failed: {ex}",
+            "error": (
+                f"flavorAsset.list failed: {ex}"
+            ),
         })
         return rows
 
@@ -385,7 +443,9 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
                 "is_multistream": "",
                 "child_count": "",
                 "status": "ERROR",
-                "error": f"flavorAsset.list failed: {ex}",
+                "error": (
+                    f"flavorAsset.list failed: {ex}"
+                ),
             })
             continue
 
@@ -463,8 +523,10 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
 
     return rows
 
+# =============================================================================
+# Main workflow ---------------------------------------------------------------
+# =============================================================================
 
-# ==== Main workflow ==========================================================
 
 def main():
     print("[INFO] Selecting entries …")
@@ -530,10 +592,14 @@ def main():
                     client.flavorAsset.delete(flv)
                     deleted_count += 1
                     print(
-                        f"[DELETED] {flv} for entry {eid} "
-                        f"(role={r.get('role', '')}, "
-                        f"parent={r.get('parent_entry_id', '')})"
+                        "[DELETED] {} for entry {}\n"
+                        "    (role={}, parent={})".format(
+                            flv,
+                            eid,
+                            r.get('role', ''),
+                            r.get('parent_entry_id', '')
                         )
+                    )
                 except KalturaException as ex:
                     # continue but mark error
                     error = f"{error}; delete {flv} failed: {ex}"
