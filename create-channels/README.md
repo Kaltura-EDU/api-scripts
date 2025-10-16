@@ -12,23 +12,20 @@ This script allows you to create multiple Kaltura MediaSpace channels in bulk by
 
 ## CSV Input File
 
-Your input file should be named `channelDetails.csv` and placed in the same
-directory as the script.
+The input CSV filename is configurable via the `.env` file, allowing you to specify the filename and location as needed.
 
-### Required Columns in CSV (channelDetails.csv)
+### Configurable CSV Column Headers
 
-| Column        | Description                                                              |
-| ------------- | ------------------------------------------------------------------------ |
-| `channelName` | The name of the channel to be created                                    |
-| `owner`       | The Kaltura user ID of the channel owner                                 |
-| `members`     | Comma-separated list of member user IDs. Use quotes if listing multiple. |
-| `privacy`     | Channel privacy level: `1` = Public, `2` = Authenticated, `3` = Private  |
-
-You can use `channelDetails.csv` as a template. Be sure not to change the filename, and keep it in the same directory as the script.
+| .env Variable             | Default CSV Column Header |
+|---------------------------|---------------------------|
+| CHANNEL_NAME_HEADER       | channelName               |
+| OWNER_ID_HEADER           | owner                     |
+| CHANNEL_MEMBERS_HEADER    | members                   |
+| PRIVACY_SETTING_HEADER    | privacy                   |
 
 ## Required Configuration
 
-Before running the script, you **must** edit the following variables at the top of the file:
+Before running the script, you **must** configure the following environment variables in your `.env` file:
 
 * `PARTNER_ID`: Your Kaltura partner ID (integer)
 * `ADMIN_SECRET`: Your admin secret key (string)
@@ -36,6 +33,8 @@ Before running the script, you **must** edit the following variables at the top 
 * `PARENT_ID`: The category ID under which new channels will be created. Usually this is the "channels" category in your MediaSpace instance.
 * `MEDIA_SPACE_BASE_URL`: The base URL of your MediaSpace instance, usually ending in `/channel/`. Example: `https://mediaspace.ucsd.edu/channel/`. This is so the output CSV has an accurate channel URL.
 * `FULL_NAME_PREFIX`: The category path prefix used to identify existing channels (e.g. `MediaSpace>site>channels>`)
+
+All of these are set as environment variables in your `.env` file.
 
 ## Features
 
@@ -55,30 +54,27 @@ Before running the script, make sure you have Python 3 installed and install the
 pip install -r requirements.txt
 ```
 
-### 2. Download the script and CSV template
+### 2. Setup configuration
 
-Clone or download the repo, then edit the provided `channelDetails_template.csv` with your own data. Save it as `channelDetails.csv` in the same directory as the script.
+Copy the `.env.example` file to `.env` and customize the values to match your environment and preferences:
 
-### 3. Edit global variables
+```bash
+cp .env.example .env
+```
 
-Open the script file and fill in the required values at the top:
+### 3. Edit the `.env` file
 
-* `PARTNER_ID`
-* `ADMIN_SECRET`
-* `USER_ID` *(optional but recommended)*
-* `PARENT_ID`
-* `MEDIA_SPACE_BASE_URL`
-* `FULL_NAME_PREFIX`
+Open the `.env` file and fill in the required values for your Kaltura partner, admin secret, user ID, parent category ID, MediaSpace base URL, full name prefix, CSV filename, and CSV column headers as needed.
 
 ### 4. Run the script
 
-Once everything is filled in and saved, run:
+Once everything is configured and saved, run:
 
 ```bash
 python3 create-channels.py
 ```
 
-After the script runs, a timestamped results file will be created in the same directory. It lists all channels created, along with their IDs, members, and direct MediaSpace links.
+After the script runs, a timestamped results file will be created in the `reports/` subfolder. It lists all channels created, along with their IDs, members, and direct MediaSpace links.
 
 ## Author
 

@@ -1,44 +1,9 @@
 """
-Bulk Kaltura Channel Creation Script
+Bulk Kaltura Channel Creation
 
-This script reads a CSV file ('channelDetails.csv') containing channel
-metadata and creates channels in bulk using the Kaltura API. Each channel is
-added as a child of a specified parent category (PARENT_ID), and members are
-granted member-level access (can view content but cannot contribute or
-moderate). The script checks for duplicate channel names and validates all
-input rows before attempting creation.
-
-Required global variables to set before running:
-- PARTNER_ID: (int) Your Kaltura partner ID.
-- ADMIN_SECRET: (str) The admin secret for your Kaltura account.
-- USER_ID: (str) Optional, used to generate the KS.
-- PARENT_ID: (int) The category ID under which new channels will be created.
-  This must point to a category you have permission to write to.
-
-CSV input format (channelDetails.csv):
-- Required headers: channelName, owner, members, privacy
-  - members: Comma-separated user IDs (wrap in quotes if multiple)
-  - privacy:
-    1 = Public (Anyone can view)
-    2 = Authenticated Users (Only logged-in users can view)
-    3 = Private (Only members can view)
-
-The script generates a results CSV file with a timestamped filename,
-containing:
-  - channelName
-  - categoryId (Kaltura's internal ID for the created category)
-  - channelLink (direct MediaSpace link to the channel)
-  - membersAdded (comma-separated list)
-  - owner
-
-By default, the script sets:
-  - userJoinPolicy = Not Allowed
-  - appearInList = Category Members Only
-  - privacyContext = MediaSpace
-  - Validates all rows and blocks execution if required fields are missing or
-    invalid
-
-These are configurable via global variables.
+Create Kaltura MediaSpace channels in bulk from a CSV. Configure credentials
+and environment-specific settings via a .env file. Column header names are
+configurable by constants in the script.
 
 Author: Galen Davis
 """
@@ -55,36 +20,62 @@ from KalturaClient.Plugins.Core import (
 )
 
 
-# SESSION CONFIGURATION -------------------------------------------------------
-PARTNER_ID = ""  # Set your partner ID
-ADMIN_SECRET = ""  # Set your admin secret
-USER_ID = ""  # Optional; used for session
+#
+# SESSION & CONFIG (loaded from .env) ---------------------------------------
+import os
+from dotenv import load_dotenv
 
-# CHANNEL CONFIGURATION VARIABLES ---------------------------------------------
-PARENT_ID = ""  # category ID of the parent category for created channels
-FULL_NAME_PREFIX = ""  # e.g. "MediaSpace>site>channels>"
-MEDIA_SPACE_BASE_URL = ""  # e.g. "https://mediaspace.ucsd.edu/channel/"
-PRIVACY_CONTEXT = "MediaSpace"
-USER_JOIN_POLICY = 3
-APPEAR_IN_LIST = 3
-INHERITANCE_TYPE = 2
-DEFAULT_PERMISSION_LEVEL = 3
-CONTRIBUTION_POLICY = 2
-MODERATION = 0
+# load variables from .env (user must create .env from .env.example)
+load_dotenv()
 
-if PARENT_ID is None:
+# Credentials / session
+PARTNER_ID = os.getenv("PARTNER_ID")
+ADMIN_SECRET = os.getenv("ADMIN_SECRET")
+USER_ID = os.getenv("USER_ID")
+
+# Channel configuration (from .env); PARENT_ID may be numeric string in env
+PARENT_ID = os.getenv("PARENT_ID")
+FULL_NAME_PREFIX = os.getenv("FULL_NAME_PREFIX", "MediaSpace>site>channels>")
+MEDIA_SPACE_BASE_URL = os.getenv(
+    "MEDIA_SPACE_BASE_URL", "https://mediaspace.ucsd.edu/channel/"
+    )
+PRIVACY_CONTEXT = os.getenv("PRIVACY_CONTEXT", "MediaSpace")
+USER_JOIN_POLICY = int(os.getenv("USER_JOIN_POLICY", "3"))
+APPEAR_IN_LIST = int(os.getenv("APPEAR_IN_LIST", "3"))
+INHERITANCE_TYPE = int(os.getenv("INHERITANCE_TYPE", "2"))
+DEFAULT_PERMISSION_LEVEL = int(os.getenv("DEFAULT_PERMISSION_LEVEL", "3"))
+CONTRIBUTION_POLICY = int(os.getenv("CONTRIBUTION_POLICY", "2"))
+MODERATION = int(os.getenv("MODERATION", "0"))
+
+# CSV header names (customize if your CSV uses different headers)
+CHANNEL_NAME_HEADER = os.getenv("CHANNEL_NAME_HEADER", "channelName")
+OWNER_ID_HEADER = os.getenv("OWNER_ID_HEADER", "owner")
+CHANNEL_MEMBERS_HEADER = os.getenv("CHANNEL_MEMBERS_HEADER", "members")
+PRIVACY_SETTING_HEADER = os.getenv("PRIVACY_SETTING_HEADER", "privacy")
+
+# Basic sanity checks for required env variables
+if not PARTNER_ID or not ADMIN_SECRET:
     raise ValueError(
-        "PARENT_ID is not set. Please provide the numeric ID of the parent "
-        "category under which new channels will be created. This is usually "
-        "the 'channels' category in your MediaSpace/Kaltura instance, but it "
-        "may vary depending on your configuration. You can find this ID by "
-        "browsing categories in the KMC or contacting your Kaltura admin."
+        "PARTNER_ID and ADMIN_SECRET must be set in your .env file before "
+        "running."
     )
 
+# Convert PARENT_ID to int where used later; keep string now to allow empty
+# check. Allow input/output CSV configuration from .env, with sensible defaults
+INPUT_CSV = os.getenv("INPUT_CSV_FILENAME", "channelDetails.csv")
 
-INPUT_CSV = "channelDetails.csv"
+# Check if the file actually exists
+if not os.path.exists(INPUT_CSV):
+    raise FileNotFoundError(
+        f"🚨 File '{INPUT_CSV}' not found in directory: {os.getcwd()}"
+        )
+
+REPORTS_DIR = "Reports"
+os.makedirs(REPORTS_DIR, exist_ok=True)
 timestamp = datetime.now().strftime("%Y-%m-%d-T%H%M")
-OUTPUT_CSV = f"channelCreationResults_{timestamp}.csv"
+OUTPUT_CSV = os.path.join(
+    REPORTS_DIR, f"{timestamp}_report_create-channels.csv"
+    )
 
 # INITIALIZE CLIENT -----------------------------------------------------------
 config = KalturaConfiguration(PARTNER_ID)
@@ -127,12 +118,25 @@ def get_existing_channel_names():
 # CHECK FOR DUPLICATE CHANNEL NAMES BEFORE PROCESSING CSV ---------------------
 existing_channel_names = get_existing_channel_names()
 
-with open(INPUT_CSV, newline='', encoding='utf-8') as csvfile:
+with open(INPUT_CSV, newline='', encoding='utf-8-sig') as csvfile:
     reader = list(csv.DictReader(csvfile))  # Convert to list to reuse
+    required_headers = {
+        CHANNEL_NAME_HEADER, OWNER_ID_HEADER, PRIVACY_SETTING_HEADER
+        }
+    csv_headers = set(reader[0].keys()) if reader else set()
+    missing_headers = required_headers - csv_headers
+    if missing_headers:
+        raise ValueError(
+            f"Missing expected column headers in input "
+            f"CSV: {', '.join(missing_headers)}"
+        )
     duplicate_names = [
-        row['channelName'].strip()
+        row[CHANNEL_NAME_HEADER].strip()
         for row in reader
-        if row['channelName'].strip() in existing_channel_names
+        if (
+            CHANNEL_NAME_HEADER in row
+            and row[CHANNEL_NAME_HEADER].strip() in existing_channel_names
+        )
     ]
 
     if duplicate_names:
@@ -147,53 +151,60 @@ with open(INPUT_CSV, newline='', encoding='utf-8') as csvfile:
         )
         exit(1)
 
-    print("✅ No duplicate channel names found. Proceeding...\n")
+    print(f"📄 Using input file: {INPUT_CSV}")
 
     # Validate all rows before making any changes
-    print("🔎 Validating CSV data...")
 
     for i, row in enumerate(reader, start=2):
         missing_fields = [
-            field for field in ('channelName', 'owner', 'privacy')
-            if not row.get(field, '').strip()
+            field_name for field_name, header_key in [
+                ("channelName", CHANNEL_NAME_HEADER),
+                ("owner", OWNER_ID_HEADER),
+                ("privacy", PRIVACY_SETTING_HEADER)
+            ]
+            if not row.get(header_key, '').strip()
         ]
 
         if missing_fields:
-            channel_preview = row.get('channelName', '').strip() or "<unnamed>"
+            channel_preview = row.get(
+                CHANNEL_NAME_HEADER, ''
+                ).strip() or "<unnamed>"
             raise ValueError(
                 f"Row {i}: Missing field(s): {', '.join(missing_fields)} "
                 f"(channelName: '{channel_preview}')"
             )
 
-        privacy_raw = row['privacy'].strip()
+        privacy_raw = row[PRIVACY_SETTING_HEADER].strip()
         if privacy_raw not in ('1', '2', '3'):
             raise ValueError(
                 f"Row {i}: Invalid privacy value '{privacy_raw}'. "
                 f"Must be 1, 2, or 3."
             )
 
-        members_raw = row.get('members', '').strip()
+        members_raw = row.get(CHANNEL_MEMBERS_HEADER, '').strip()
         if not members_raw:
             print(
                 f"⚠️  Row {i}: No members specified for channel "
-                f"'{row['channelName'].strip()}'."
+                f"'{row[CHANNEL_NAME_HEADER].strip()}'."
                 )
-
-    print("✅ All CSV rows validated. Proceeding with channel creation...\n")
 
     results = []
     for row in reader:
-        channel_name = row['channelName'].strip()
-        owner = row['owner'].strip()
-        privacy_raw = row['privacy'].strip()
+        channel_name = row[CHANNEL_NAME_HEADER].strip()
+        owner = row[OWNER_ID_HEADER].strip()
+        privacy_raw = row[PRIVACY_SETTING_HEADER].strip()
         if not privacy_raw:
             raise ValueError(
-                f"Missing 'privacy' value for channel '{row['channelName']}'. "
+                f"Missing 'privacy' value for channel "
+                f"'{row[CHANNEL_NAME_HEADER]}'. "
                 "Please ensure all rows in your CSV include a valid "
                 "privacy level (1, 2, or 3)."
             )
         privacy = int(privacy_raw)
-        members = [m.strip() for m in row['members'].split(',') if m.strip()]
+        members = [
+            m.strip() for m in row[CHANNEL_MEMBERS_HEADER].split(',')
+            if m.strip()
+            ]
 
         category = KalturaCategory()
         category.name = channel_name

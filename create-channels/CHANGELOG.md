@@ -1,6 +1,17 @@
 ## Changelog for create-channels.py
 
-### \[1.1.0] - 2025-05-04
+### [1.2.0] - 2025-10-16
+
+#### Added
+* Output report is now saved to a `reports/` subfolder (created automatically if it doesn't exist).
+* Input CSV filename is now configurable via `.env` (`INPUT_CSV_FILENAME`).
+* CSV column headers are now configurable via `.env`, allowing flexibility in input file schema.
+
+#### Changed
+* Refactored script to load all session and global variables from a `.env` file (e.g. credentials, parent ID, configuration).
+* Improved header detection logic to gracefully handle Byte Order Mark (BOM) issues in exported CSV files.
+
+### [1.1.0] - 2025-05-04
 
 #### Added
 
