@@ -132,7 +132,7 @@ def _as_int(x) -> int:
         return int(x)
     except Exception:
         try:
-            # sizeInBytes sometimes returned as string
+            # size sometimes returned as string
             return int(str(x).strip())
         except Exception:
             return 0
@@ -165,11 +165,11 @@ def pick_source_flavor(flavor_objects) -> Tuple[Optional[str], Optional[str]]:
         except Exception:
             pass
 
-    # 3) largest by sizeInBytes
+    # 3) largest by size
     max_fa = None
     max_size = -1
     for fa in flavor_objects:
-        size_b = _as_int(getattr(fa, "sizeInBytes", 0))
+        size_b = _as_int(getattr(fa, "size", 0))
         if size_b > max_size:
             max_size = size_b
             max_fa = fa
@@ -286,7 +286,7 @@ def write_csv(path: str, rows: List[Dict[str, str]]):
                 "role", "entry_id", "parent_entry_id", "entry_name",
                 "owner_user_id", "conversion_profile_id", "total_flavors",
                 "source_flavor_id", "source_reason", "flavors_to_delete",
-                "flavors_deleted_count", "bytes_saved", "is_multistream",
+                "flavors_deleted_count", "kilobytes_saved", "is_multistream",
                 "child_count", "status", "error"
             ])
             w.writeheader()
@@ -297,7 +297,7 @@ def write_csv(path: str, rows: List[Dict[str, str]]):
             "role", "entry_id", "parent_entry_id", "entry_name",
             "owner_user_id", "conversion_profile_id", "total_flavors",
             "source_flavor_id", "source_reason", "flavors_to_delete",
-            "flavors_deleted_count", "bytes_saved", "is_multistream",
+            "flavors_deleted_count", "kilobytes_saved", "is_multistream",
             "child_count", "status", "error"
         ])
         w.writeheader()
@@ -332,7 +332,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             "source_reason": "",
             "flavors_to_delete": "",
             "flavors_deleted_count": "0",
-            "bytes_saved": "0",
+            "kilobytes_saved": "0",
             "is_multistream": "",
             "child_count": "",
             "status": "ERROR",
@@ -365,7 +365,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             "source_reason": "",
             "flavors_to_delete": "",
             "flavors_deleted_count": "0",
-            "bytes_saved": "0",
+            "kilobytes_saved": "0",
             "is_multistream": is_multi,
             "child_count": str(len(children)) if children else "0",
             "status": "SKIPPED_SINGLE_FLAVOR",
@@ -386,7 +386,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
                 "source_reason": "",
                 "flavors_to_delete": "",
                 "flavors_deleted_count": "0",
-                "bytes_saved": "0",
+                "kilobytes_saved": "0",
                 "is_multistream": is_multi,
                 "child_count": str(len(children)) if children else "0",
                 "status": "SKIPPED_NO_SOURCE_DETECTED",
@@ -405,7 +405,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
                 if fa_flavor_id in ADDITIONAL_FLAVORS_TO_KEEP:
                     continue
                 to_delete_ids.append(fa_id)
-                bytes_saved += _as_int(getattr(fa, "sizeInBytes", 0))
+                bytes_saved += _as_int(getattr(fa, "size", 0))
             rows.append({
                 "role": "PARENT",
                 "entry_id": parent_id,
@@ -418,7 +418,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
                 "source_reason": src_reason or "",
                 "flavors_to_delete": ",".join(to_delete_ids),
                 "flavors_deleted_count": str(len(to_delete_ids)),
-                "bytes_saved": str(bytes_saved),
+                "kilobytes_saved": str(bytes_saved),
                 "is_multistream": is_multi,
                 "child_count": str(len(children)) if children else "0",
                 "status": "READY",
@@ -446,7 +446,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
                 "source_reason": "",
                 "flavors_to_delete": "",
                 "flavors_deleted_count": "0",
-                "bytes_saved": "0",
+                "kilobytes_saved": "0",
                 "is_multistream": "",
                 "child_count": "",
                 "status": "ERROR",
@@ -470,7 +470,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
                 "source_reason": "",
                 "flavors_to_delete": "",
                 "flavors_deleted_count": "0",
-                "bytes_saved": "0",
+                "kilobytes_saved": "0",
                 "is_multistream": "",
                 "child_count": "",
                 "status": "SKIPPED_SINGLE_FLAVOR",
@@ -492,7 +492,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
                 "source_reason": "",
                 "flavors_to_delete": "",
                 "flavors_deleted_count": "0",
-                "bytes_saved": "0",
+                "kilobytes_saved": "0",
                 "is_multistream": "",
                 "child_count": "",
                 "status": "SKIPPED_NO_SOURCE_DETECTED",
@@ -512,7 +512,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             if fa_flavor_id in ADDITIONAL_FLAVORS_TO_KEEP:
                 continue
             c_to_delete.append(fa_id)
-            c_bytes_saved += _as_int(getattr(fa, "sizeInBytes", 0))
+            c_bytes_saved += _as_int(getattr(fa, "size", 0))
 
         rows.append({
             "role": "CHILD",
@@ -526,7 +526,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             "source_reason": csrc_reason or "",
             "flavors_to_delete": ",".join(c_to_delete),
             "flavors_deleted_count": str(len(c_to_delete)),
-            "bytes_saved": str(c_bytes_saved),
+            "kilobytes_saved": str(c_bytes_saved),
             "is_multistream": "",
             "child_count": "",
             "status": "READY",
@@ -569,12 +569,12 @@ def main():
         int(r.get("flavors_deleted_count", "0") or 0) for r in ready
         )
     total_bytes_to_save = sum(
-        _as_int(r.get("bytes_saved", "0")) for r in ready
+        _as_int(r.get("kilobytes_saved", "0")) for r in ready
         )
     print(
         f"[PLAN] Parents ready: {parents_ready} | Children ready: "
         f"{children_ready} | Flavors to delete: {total_flavors_to_delete} "
-        f"| Bytes potentially saved: {total_bytes_to_save}"
+        f"| KiloBytes potentially saved: {total_bytes_to_save}"
         )
 
     confirm = input(

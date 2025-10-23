@@ -50,4 +50,4 @@ The script creates a CSV file containing the following columns:
 - `entry_id`: The ID of the media entry.
 - `entry_name`: The name of the media entry.
 - `flavors_deleted`: Number of flavors deleted for the entry.
-- `bytes_saved`: Total bytes of storage space saved by deleting flavors.
+- `kilobytes_saved`: Total KiloBytes of storage space saved by deleting flavors.
