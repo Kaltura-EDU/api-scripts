@@ -59,6 +59,8 @@ USER_ID = os.getenv("USER_ID", "").strip()  # optional
 SERVICE_URL = os.getenv("SERVICE_URL", "https://www.kaltura.com").rstrip("/")
 PRIVILEGES = os.getenv("PRIVILEGES", "all:*,disableentitlement")
 
+ADDITIONAL_FLAVORS_TO_KEEP = get_env_csv("ADDITIONAL_FLAVORS_TO_KEEP")
+
 ENTRY_IDS = get_env_csv("ENTRY_IDS")
 TAGS = get_env_csv("TAGS")
 CATEGORY_IDS = get_env_csv("CATEGORY_IDS")
@@ -395,7 +397,12 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             bytes_saved = 0
             for fa in flavors:
                 fa_id = getattr(fa, "id", "")
+                fa_flavor_id = str(getattr(fa, "flavorParamsId", ""))
+                # skip the source flavor
                 if fa_id == src_id:
+                    continue
+                # skip additional flavors
+                if fa_flavor_id in ADDITIONAL_FLAVORS_TO_KEEP:
                     continue
                 to_delete_ids.append(fa_id)
                 bytes_saved += _as_int(getattr(fa, "sizeInBytes", 0))
@@ -497,7 +504,12 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
         c_bytes_saved = 0
         for fa in cflavors:
             fa_id = getattr(fa, "id", "")
+            fa_flavor_id = str(getattr(fa, "flavorParamsId", ""))
+            # skip the source flavor
             if fa_id == csrc_id:
+                continue
+            # skip additional flavors
+            if fa_flavor_id in ADDITIONAL_FLAVORS_TO_KEEP:
                 continue
             c_to_delete.append(fa_id)
             c_bytes_saved += _as_int(getattr(fa, "sizeInBytes", 0))

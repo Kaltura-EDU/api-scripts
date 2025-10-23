@@ -36,6 +36,7 @@ The script requires a `.env` file with the following variables:
 - `PARTNER_ID`: Your Kaltura partner ID.
 - `ADMIN_SECRET`: Your Kaltura admin secret key.
 - `SERVICE_URL`: The Kaltura service URL.
+- `ADDITIONAL_FLAVORS_TO_KEEP`: Comma-delimited list of Flavor IDs to preserve in addition to the source one.
 - `ENTRY_IDS`: Comma-delimited list of media entry IDs to process.
 - `CATEGORY_IDS`: Comma-delimited list of category IDs to filter entries.
 - `TAGS`: Comma-delimited list of tags to filter entries.
