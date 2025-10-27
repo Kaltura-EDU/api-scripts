@@ -210,7 +210,7 @@ for row in report:
         display = res.displayInSearch.getValue()
         status = res.status.getValue()
         print(f"[{action_log}] Entry {eid} - DisplayInSeach {display} - Status {status}")
-        row["status"] = f"{action_log} - DisplayInSeach {display} - Status {status}"
+        row["status"] = f"{action_log}"
     except KalturaException as e:
         print(
             f"[SKIPPED] Entry {eid} could not be {action_log.lower()}."
