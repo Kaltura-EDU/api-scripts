@@ -1,5 +1,6 @@
 # generated files
 /delete-flavors/*.csv
+/delete-entries/*.csv
 /report-count-duration/*.csv
 
 ### Python template
@@ -36,3 +37,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Macos files
+.DS_Store
+
+# IDE Files
+.idea

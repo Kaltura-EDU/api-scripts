@@ -28,3 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Support CSV input: can now supply a `CSV_FILE` and `ENTRY_ID_COLUMN_HEADER` in the `.env` to load entry IDs from a CSV.
 - Improved header parsing: `ENTRY_ID_COLUMN_HEADER` normalizes column names (strip quotes / whitespace) so CSV headers with quotation marks work.
 - Updated instructions in README: added setup steps (virtualenv, dependencies, etc.).
+
+## [1.3.0] - 2025-10-23
+
+### Changed
+- Added a new `.env` configuration parameter `ADDITIONAL_FLAVORS_TO_KEEP` that allows to preserve multiple flavors in addition to the source one.

@@ -1,23 +1,23 @@
 # delete-entries.py
 
-This script permanently deletes Kaltura media entries by entry ID using the Kaltura API. It is designed for use by administrators who need to remove a large number of entries quickly, particularly in cases where batch deletion through the KMC is not feasible.
+This script permanently deletes or recycles Kaltura media entries by entry ID using the Kaltura API. It is designed for use by administrators who need to remove a large number of entries quickly, particularly in cases where batch deletion or recycling through the KMC is not feasible.
 
 ## ⚠️ WARNING
 
-This script **permanently deletes entries** and cannot be undone. They are **not** put in a "recycled" status. Use with caution. Entries listed as parents will automatically remove associated child entries as well.
+This script **permanently deletes entries** and cannot be undone. They are put in a "recycled" status if required. Use with caution. Entries listed as parents will automatically remove associated child entries as well.
 
 ---
 
 ## Features
 
-- Accepts a comma-separated list of Kaltura entry IDs
+- Accepts a comma-separated list of Kaltura entry IDs or CSV file
 - Uses `baseEntry.get()` to collect entry metadata:
   - Entry ID
   - Entry name
   - Owner user ID
   - Duration (in seconds)
 - Confirms intent to delete
-- Uses `baseEntry.delete()` to permanently remove entries
+- Uses `baseEntry.delete()` to permanently remove entries or `baseEntry.recycle()` to recycle them
 - Gracefully handles:
   - Already deleted entries
   - Missing or invalid entry IDs
@@ -26,53 +26,28 @@ This script **permanently deletes entries** and cannot be undone. They are **not
   - `entry_name`
   - `owner_user_id`
   - `duration_seconds`
-  - `status` (`OK`, `NOT FOUND`, `DELETED`, `ALREADY DELETED`)
+  - `status` (`FOUND`, `NOT FOUND`, `DELETED/RECYCLED`, `ALREADY DELETED/RECYCLED`)
 
----
+## Instructions
 
-## Requirements
+1. Download all files in this repository or clone the repo.
+2. Rename `.env.example` to `.env`.
+3. Create a virtual environment (`python3 -m venv venv`).
+4. Activate the virtual environment (`source venv/bin/activate` on macOS/Linux, `venv\Scripts\activate` on Windows).
+5. Install dependencies (`pip install -r requirements.txt`).
+6. Assign values in the `.env` file for your environment.
+7. Run the script (`python3 delete-entries.py`). 
+8. Review the entries listed in the terminal. A preview report CSV will be created with a name like `20250516_1040_deleted_entries_PREVIEW.csv`.
+9. Type `DELETE` to confirm and proceed with deletion or `RECYCLE` for recycling. Running it will permanently delete or recycle entries and cannot be undone.
+10. A result report will be created with a name like `20250516_1040_deleted_entries_RESULT.csv`. The final status column indicates whether each entry was successfully deleted, recycled, not found, or skipped.
 
-- Python 3.x
-- `KalturaApiClient` (install with `pip install KalturaApiClient`)
-- `lxml` (install with `pip install lxml`)
+## Configuration
 
----
+The script requires a `.env` file with the following variables:
 
-## Usage
-
-1. Download and open the script file and update the following configuration variables at the top:
-
-```python
-PARTNER_ID = ''
-ADMIN_SECRET = ''
-USER_ID = 'your_admin_user_id'
-```
-
-2. Run the script:
-
-```bash
-python3 delete-entries.py
-```
-
-3. When prompted, paste a comma-separated list of entry IDs to delete.
-
-4. Review the entries listed in the terminal. A report CSV will be created with a name like:
-
-```
-deleted_entries_20250516_104028.csv
-```
-
-5. Type `DELETE` to confirm and proceed with deletion.
-
----
-
-## Output
-
-A CSV report will be saved in the same directory as the script. The final status column indicates whether each entry was successfully deleted, not found, or skipped.
-
----
-
-Galen Davis  
-Senior Education Technology Specialist  
-UC San Diego  
-16 May 2025
+- `PARTNER_ID`: Your Kaltura partner ID.
+- `ADMIN_SECRET`: Your Kaltura admin secret key.
+- `SERVICE_URL`: The Kaltura service URL.
+- `ENTRY_IDS`: Comma-delimited list of media entry IDs to process.
+- `CSV_FILE`: Path to a CSV file containing entry IDs to process. If provided, this will be used instead of `ENTRY_IDS`.
+- `ENTRY_ID_COLUMN_HEADER`: The column header name in the CSV file that contains the entry IDs. Headers with quotation marks in them (in the CSV) are handled correctly. Don't use quotation marks in .env.
