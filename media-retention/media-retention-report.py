@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 from dotenv import load_dotenv
+from wakepy import keep
 import random
 import csv
 import threading
@@ -453,8 +454,9 @@ def _str_from_env(*names: str) -> str:
     return ""
 
 
-# Prevent system sleep while this script runs (macOS only via `caffeinate`).
+# Prevent system sleep while this script runs using wakepy.
 # Controlled by .env key PREVENT_COMPUTER_SLEEP with literal values True/False.
+# Additional controls for KEEP_DISPLAY_AWAKE and KEEP_SYSTEM_AWAKE can also be configured in .env
 def _bool_from_env(name: str, default: bool = True) -> bool:
     raw = os.getenv(name, str(default))
     if raw is None:
@@ -464,6 +466,8 @@ def _bool_from_env(name: str, default: bool = True) -> bool:
 
 
 PREVENT_COMPUTER_SLEEP = _bool_from_env("PREVENT_COMPUTER_SLEEP", default=True)
+KEEP_DISPLAY_AWAKE = _bool_from_env("KEEP_DISPLAY_AWAKE", default=True)
+KEEP_SYSTEM_AWAKE = _bool_from_env("KEEP_SYSTEM_AWAKE", default=True)
 
 PARTNER_ID = int(os.getenv("PARTNER_ID", "0"))
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
@@ -501,24 +505,49 @@ except Exception:
     TZ = ZoneInfo("America/Los_Angeles")
 
 
-# ---- Helper: prevent sleep with caffeinate (macOS only) ----
-def keep_awake_with_caffeinate():
+# ---- Helper: prevent sleep with wakepy ----
+def keep_awake_for_process_lifetime():
     """
-    On macOS, launch `caffeinate` bound to this process so the system won't
-    sleep. Returns the Popen handle (or None on non-Darwin or failure).
-    Automatically exits when this process exits.
+    Prevents system and/or display sleep for the lifetime of this process.
+    Automatically stops when the process exits.
     """
     try:
-        if platform.system() != "Darwin":
-            return None
-        pid = os.getpid()
-        # -d: prevent display sleep, -i: prevent idle sleep,
-        # -m: prevent disk sleep, # -s: prevent system sleep,
-        # -u: declare user is active, -w PID: exit when PID exits
-        return subprocess.Popen(["caffeinate", "-dimus", "-w", str(pid)])
+        system = platform.system()
+        if system not in ("Darwin", "Windows", "Linux"):
+            log(f"[WARN] Sleep prevention not supported on {system}.")
+            return False
+
+        # Decide which wakepy mode to use
+        if KEEP_DISPLAY_AWAKE:
+            mode = keep.presenting()  # Keeps display + system awake
+        elif KEEP_SYSTEM_AWAKE:
+            mode = keep.running()     # Keeps system awake only
+        else:
+            log("[WARN] Both KEEP_DISPLAY_AWAKE and KEEP_SYSTEM_AWAKE are False; not preventing sleep.")
+            return False
+
+        def _run_keep():
+            with mode:
+                threading.Event().wait()  # Block until process exits
+
+        global _awake_thread
+        _awake_thread = threading.Thread(
+            target=_run_keep,
+            name="WakepyThread",
+            daemon=True  # Stops automatically when process exits
+        )
+        _awake_thread.start()
+
+        log(
+            f"{system} sleep prevention engaged "
+            f"(display={'on' if KEEP_DISPLAY_AWAKE else 'off'}, "
+            f"system={'on' if KEEP_SYSTEM_AWAKE else 'off'})."
+        )
+        return True
+
     except Exception as ex:
-        log(f"[WARN] Could not start caffeinate: {ex}")
-        return None
+        log(f"[WARN] Could not start wakepy: {ex}")
+        return False
 
 
 # ---- Kaltura Client Bootstrap ----
@@ -665,7 +694,7 @@ def classify_policy(
     if age >= SEC_4Y and (last_gap is None or last_gap >= SEC_4Y):
         return "4year"
 
-    # Per contract: never-watched assets that are ≥2y old count as"not called
+    # Per contract: never-watched assets that are ≥2y old count as "not called
     # for playback for >24 months" and should be 2-year candidates. So, for
     # 2-year: 2y <= age < 4y AND (never watched OR last >= 2y)
     if SEC_2Y <= age < SEC_4Y and (last_gap is None or last_gap >= SEC_2Y):
@@ -1289,15 +1318,10 @@ if __name__ == "__main__":
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # Prevent system sleep on macOS while the script runs (optional via .env)
-    _caff = None
+    # Prevent system sleep while the script runs (optional via .env)
     if PREVENT_COMPUTER_SLEEP:
-        _caff = keep_awake_with_caffeinate()
-        if _caff:
-            log(
-                "macOS caffeinate engaged (system sleep disabled for the "
-                "duration of this run)."
-                )
+        if keep_awake_for_process_lifetime():
+            log("System sleep prevention active for duration of this run.")
 
     # Initialize logs folder and logfile
     _ = init_logfile(base_dir)

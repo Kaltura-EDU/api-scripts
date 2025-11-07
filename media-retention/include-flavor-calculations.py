@@ -17,6 +17,7 @@ import queue
 import threading
 import platform
 import subprocess
+from wakepy import keep
 from typing import Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 from datetime import datetime, timezone
@@ -61,6 +62,8 @@ THROTTLE_MS = _int("THROTTLE_MS", 0)
 HTTP_RETRIES = _int("HTTP_RETRIES", 3)
 
 PREVENT_COMPUTER_SLEEP = _bool("PREVENT_COMPUTER_SLEEP", True)
+KEEP_DISPLAY_AWAKE = _bool("KEEP_DISPLAY_AWAKE", True)
+KEEP_SYSTEM_AWAKE = _bool("KEEP_SYSTEM_AWAKE", True)
 PROGRESS_EVERY_SEC = float(os.getenv("PROGRESS_EVERY_SEC", "2.0"))
 PROGRESS_STYLE = os.getenv("PROGRESS_STYLE", "singleline").strip().lower()
 
@@ -214,16 +217,49 @@ def compute_counts_and_bytes(
     return n, total
 
 
-def keep_awake_with_caffeinate():
-    """On macOS, keep the machine awake while this process runs."""
+# ---- Helper: prevent sleep with wakepy ----
+def keep_awake_for_process_lifetime():
+    """
+    Prevents system and/or display sleep for the lifetime of this process.
+    Automatically stops when the process exits.
+    """
     try:
-        if platform.system() != "Darwin":
-            return None
-        pid = os.getpid()
-        return subprocess.Popen(["caffeinate", "-dimus", "-w", str(pid)])
+        system = platform.system()
+        if system not in ("Darwin", "Windows", "Linux"):
+            log(f"[WARN] Sleep prevention not supported on {system}.")
+            return False
+
+        # Decide which wakepy mode to use
+        if KEEP_DISPLAY_AWAKE:
+            mode = keep.presenting()  # Keeps display + system awake
+        elif KEEP_SYSTEM_AWAKE:
+            mode = keep.running()     # Keeps system awake only
+        else:
+            log("[WARN] Both KEEP_DISPLAY_AWAKE and KEEP_SYSTEM_AWAKE are False; not preventing sleep.")
+            return False
+
+        def _run_keep():
+            with mode:
+                threading.Event().wait()  # Block until process exits
+
+        global _awake_thread
+        _awake_thread = threading.Thread(
+            target=_run_keep,
+            name="WakepyThread",
+            daemon=True  # Stops automatically when process exits
+        )
+        _awake_thread.start()
+
+        log(
+            f"{system} sleep prevention engaged "
+            f"(display={'on' if KEEP_DISPLAY_AWAKE else 'off'}, "
+            f"system={'on' if KEEP_SYSTEM_AWAKE else 'off'})."
+        )
+        return True
+
     except Exception as ex:
-        log(f"[WARN] Could not start caffeinate: {ex}")
-        return None
+        log(f"[WARN] Could not start wakepy: {ex}")
+        return False
 
 # -------------------- Worker pool --------------------
 
@@ -439,15 +475,9 @@ def enrich_csv():
 
 
 if __name__ == "__main__":
-    try:
-        _caff = None
-        if PREVENT_COMPUTER_SLEEP:
-            _caff = keep_awake_with_caffeinate()
-            if _caff:
-                log(
-                    "macOS caffeinate engaged (system sleep disabled for this "
-                    "run)."
-                    )
+    if PREVENT_COMPUTER_SLEEP:
+        if keep_awake_for_process_lifetime():
+            log("System sleep prevention active for duration of this run.")
         enrich_csv()
     except KeyboardInterrupt:
         log("Interrupted by user.")
