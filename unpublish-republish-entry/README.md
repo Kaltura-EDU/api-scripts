@@ -12,22 +12,19 @@ This script addresses a common issue in Kaltura where a video entry appears in a
 
 ## Configuration
 
-Edit the script to set the following global variables:
+Create a `.env` file in the same directory as the script with the following keys:
 
-```python
-USE_CATEGORY_NAME = True  # Set to False to enter a category ID directly
-FULL_NAME_PREFIX = "Canvas_Prod>site>channels>"  # Update to match your environment
+```env
+PARTNER_ID=your_partner_id
+ADMIN_SECRET=your_admin_secret
+USER_ID=your_user_id
+USE_CATEGORY_NAME=True
+CATEGORY_PATH_PREFIX=Canvas_Prod>site>channels>
+ENTRY_IDS=1_abcd1234,1_efgh5678
 ```
 
-Update the session credentials:
-
-```python
-PARTNER_ID = ""       # Your partner ID
-ADMIN_SECRET = ""     # Your admin secret
-USER_ID = ""   # Optional; only used the session creation
-```
-
-All sessions use: `privileges = "all:*,disableentitlement"`
+- Set `USE_CATEGORY_NAME` to `True` to use course IDs (e.g., `15712`) or `False` to use the full category ID directly.
+- `ENTRY_IDS` is a comma-delimited list of one or more Kaltura entry IDs to unpublish and republish.
 
 ## Requirements
 
@@ -41,6 +38,7 @@ Dependencies:
 
 - `KalturaApiClient`
 - `lxml`
+- `python-dotenv`
 
 ## Usage
 
@@ -50,8 +48,8 @@ Run the script and follow the prompts:
 python3 unpublish-republish-entry.py
 ```
 
-It will ask for:
-- Entry ID
+It will use the `.env` file for:
+- Entry ID(s)
 - Canvas course ID (if `USE_CATEGORY_NAME = True`)
 - Or category ID (if `USE_CATEGORY_NAME = False`)
 
@@ -59,21 +57,26 @@ It will ask for:
 
 This script only handles one entry at a time. It's designed to be a fast fix for support tickets where an entry needs a metadata reset in the Media Gallery.
 
-### Important Note on FULL_NAME_PREFIX
+### Important Note on CATEGORY_PATH_PREFIX
 
 We initially attempted to use the category nameEqual filter to look up categories by Canvas course ID (e.g., `15712`), but encountered unreliable results due to Kaltura allowing duplicate category names across different parts of the hierarchy. This made it difficult to consistently find the correct Media Gallery category. 
 
-Since this script is primarily designed to fix "Access Denied" errors in Canvas Media Galleries, we instead rely on the  `fullNameEqual` field. This matches the full path of the category in the hierarchy, like:
+Since this script is primarily designed to fix "Access Denied" errors in Canvas Media Galleries, we instead rely on the `fullNameEqual` field. This matches the full path of the category in the hierarchy, like:
 
 ```shell
 `Canvas_Prod>site>channels>15712`
 ```
-To make this work in your own environment, you’ll need to set the FULL_NAME_PREFIX global variable near the top of the script. For us (UC San Diego), all Media Gallery categories live under:
+
+The `CATEGORY_PATH_PREFIX` variable represents the full category path prefix used with `fullNameEqual`. Depending on your use case, this may refer to Canvas course folders, MediaSpace channels, or other hierarchical structures.
+
+To make this work in your own environment, you’ll need to set the `CATEGORY_PATH_PREFIX` global variable near the top of the script. For us (UC San Diego), all Media Gallery categories live under:
 
 ```python
-FULL_NAME_PREFIX = "Canvas_Prod>site>channels>"
+CATEGORY_PATH_PREFIX = "Canvas_Prod>site>channels>"
 ```
 
 If your institution uses a different naming or folder structure, be sure to update this variable accordingly so the script can correctly locate the category.
 
-Author: Galen Davis — Kaltura survivor and automation enthusiast
+Author: Galen Davis
+Senior Education Technology Specialist, UC San Diego
+Updated 11/4/2025
