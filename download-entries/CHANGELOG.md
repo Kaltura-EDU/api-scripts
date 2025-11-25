@@ -1,5 +1,9 @@
 # Changelog – download-entries.py
 
+## [v1.3.0] – 2025-11-20
+### Added
+- Enhanced security: Admin Secret is now hidden during terminal input using `getpass`. (Galen Davis, UCSD)
+
 ## [v1.2.0] - 2025-05-05
 ### Changed
 - Main function now prompts user for Partner ID and Admin Secret

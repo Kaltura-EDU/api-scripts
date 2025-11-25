@@ -25,6 +25,7 @@ from KalturaClient.Plugins.Core import (
 )
 from KalturaClient.exceptions import KalturaException
 import re
+import getpass
 
 # ---- CONFIGURABLE VARIABLES ----
 # PARTNER_ID = "" DO NOT USE--script will request input
@@ -254,7 +255,8 @@ def process_entry(client, entry, index):
 
 def main():
     partner_id = input("Enter your Partner ID: ").strip()
-    admin_secret = input("Enter your Admin Secret: ").strip()
+    import getpass
+    admin_secret = getpass.getpass("Enter your Admin Secret: ").strip()
 
     client = get_kaltura_client(partner_id, admin_secret)
 
