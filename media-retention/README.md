@@ -79,7 +79,9 @@ Summarizes candidate data into high-level counts and totals.
 Shared knobs in `.env` (used by long-running scripts):  
 - `HTTP_RETRIES`, `THROTTLE_MS`  
 - `PROGRESS_EVERY_SEC`, `PROGRESS_STYLE`  
-- `PREVENT_COMPUTER_SLEEP` (macOS only; uses `caffeinate`)  
+- `PREVENT_COMPUTER_SLEEP`
+  - `KEEP_SYSTEM_AWAKE` will keep computer from sleeping
+  - `KEEP_DISPLAY_AWAKE` will additionally keep the display from going to sleep (optional if `PREVENT_COMPUTER_SLEEP` is set to `True`)
 
 Script-specific knobs:  
 - `REPORT_LOOKUP_WORKERS` → `media-retention-report.py`  
@@ -106,4 +108,5 @@ Typical workflow for a retention audit:
 
 - Long runs can take hours on large repositories (~800k entries may take ~12 hours). This is why these scripts are separated at present.  
 - Progress meters give real-time feedback, including ETA and API call rates.  
-- `PREVENT_COMPUTER_SLEEP=True` is recommended to ensure long runs don't stop because your computer goes to sleep.  
+- `PREVENT_COMPUTER_SLEEP=True` is recommended to ensure long runs don't stop because your computer goes to sleep.
+  - Additional controls for `KEEP_SYSTEM_AWAKE` and `KEEP_DISPLAY_AWAKE` allow granular control of wake function from .env 
