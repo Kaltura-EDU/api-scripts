@@ -4,6 +4,16 @@ All notable changes to the `create-channel.py` script will be documented here.
 
 ---
 
+## [v1.2] - 2025-05-08
+### Added
+- Implemented `.env` file support for secure configuration management using `python-dotenv`.
+- Added `.env.example` to serve as a configuration template.
+- Added `.gitignore` to exclude virtual environments and secrets from version control.
+- Added `README.md` with installation steps and a configuration reference table.
+### Changed
+- Refactored `create-channel.py` to load all configuration from environment variables instead of local Python variables.
+- Updated `requirements.txt` to include `python-dotenv`.
+
 ## [v1.1] - 2025-05-07
 ### Changed
 - Replaced hardcoded Kaltura category property assignments with global variables
