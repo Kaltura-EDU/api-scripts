@@ -8,28 +8,35 @@ from KalturaClient.Plugins.Core import (
     KalturaSessionType, KalturaCategory,
     KalturaCategoryUser, KalturaCategoryUserPermissionLevel
 )
-import urllib
+import urllib.parse
+import os
+from dotenv import load_dotenv
 
-# Session Variables - Set these before running the script
-PARTNER_ID = ""
-ADMIN_SECRET = ""
-USER_ID = ""
+load_dotenv()
+
+# Session Variables - Set these in .env
+PARTNER_ID = os.getenv("PARTNER_ID")
+ADMIN_SECRET = os.getenv("ADMIN_SECRET")
+USER_ID = os.getenv("USER_ID")
 
 # Channel variables
-MEDIA_SPACE_URL = ""  #  E.g "https://mediaspace.ucsd.edu"
-PARENT_ID = None  # Default parent category ID for MediaSpace channels
-PRIVACY_CONTEXT = "MediaSpace"  # Default privacy context for MediaSpace
-CHANNEL_DESCRIPTION = ""
-CHANNEL_NAME = ""
-OWNER = ""
-MEMBERS = ""  # Comma-separated list of user IDs (e.g., "user1,user2,user3")
-CHANNEL_PRIVACY = 3
-USER_JOIN_POLICY = 3  # Not Allowed
-APPEAR_IN_LIST = 3    # Category Members Only
-INHERITANCE_TYPE = 2  # Manual
-DEFAULT_PERMISSION_LEVEL = 3  # Member
-CONTRIBUTION_POLICY = 2  # Members with Contribution Permission
-MODERATION = 0  # No moderation
+MEDIA_SPACE_URL = os.getenv("MEDIA_SPACE_URL")
+PARENT_ID = os.getenv("PARENT_ID")
+PARENT_ID = int(PARENT_ID) if PARENT_ID else None
+
+PRIVACY_CONTEXT = os.getenv("PRIVACY_CONTEXT", "MediaSpace")
+CHANNEL_DESCRIPTION = os.getenv("CHANNEL_DESCRIPTION", "")
+CHANNEL_NAME = os.getenv("CHANNEL_NAME", "")
+OWNER = os.getenv("OWNER", "")
+MEMBERS = os.getenv("MEMBERS", "")
+
+CHANNEL_PRIVACY = int(os.getenv("CHANNEL_PRIVACY", 3))
+USER_JOIN_POLICY = int(os.getenv("USER_JOIN_POLICY", 3))
+APPEAR_IN_LIST = int(os.getenv("APPEAR_IN_LIST", 3))
+INHERITANCE_TYPE = int(os.getenv("INHERITANCE_TYPE", 2))
+DEFAULT_PERMISSION_LEVEL = int(os.getenv("DEFAULT_PERMISSION_LEVEL", 3))
+CONTRIBUTION_POLICY = int(os.getenv("CONTRIBUTION_POLICY", 2))
+MODERATION = int(os.getenv("MODERATION", 0))
 
 # Initialize Kaltura client
 config = KalturaConfiguration(PARTNER_ID)
