@@ -1,5 +1,12 @@
 ## Changelog for create-channels.py
 
+### [1.2.1] - 2026-02-04
+
+#### Changed
+* Made `MEDIA_SPACE_BASE_URL` a required environment variable and removed the hardcoded default value to improve portability.
+* The script now ensures that the generated `channelLink` in the output CSV correctly includes the `/channel/` path.
+* Improved comments in `.env.example` for clarity on required variables.
+
 ### [1.2.0] - 2025-10-16
 
 #### Added
