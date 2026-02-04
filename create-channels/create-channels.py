@@ -36,9 +36,7 @@ USER_ID = os.getenv("USER_ID")
 # Channel configuration (from .env); PARENT_ID may be numeric string in env
 PARENT_ID = os.getenv("PARENT_ID")
 FULL_NAME_PREFIX = os.getenv("FULL_NAME_PREFIX", "MediaSpace>site>channels>")
-MEDIA_SPACE_BASE_URL = os.getenv(
-    "MEDIA_SPACE_BASE_URL", "https://mediaspace.ucsd.edu/channel/"
-    )
+MEDIA_SPACE_BASE_URL = os.getenv("MEDIA_SPACE_BASE_URL")
 PRIVACY_CONTEXT = os.getenv("PRIVACY_CONTEXT", "MediaSpace")
 USER_JOIN_POLICY = int(os.getenv("USER_JOIN_POLICY", "3"))
 APPEAR_IN_LIST = int(os.getenv("APPEAR_IN_LIST", "3"))
@@ -58,6 +56,10 @@ if not PARTNER_ID or not ADMIN_SECRET:
     raise ValueError(
         "PARTNER_ID and ADMIN_SECRET must be set in your .env file before "
         "running."
+    )
+if not MEDIA_SPACE_BASE_URL:
+    raise ValueError(
+        "MEDIA_SPACE_BASE_URL must be set in your .env file before running."
     )
 
 # Convert PARENT_ID to int where used later; keep string now to allow empty
@@ -188,6 +190,12 @@ with open(INPUT_CSV, newline='', encoding='utf-8-sig') as csvfile:
                 f"'{row[CHANNEL_NAME_HEADER].strip()}'."
                 )
 
+    # Ensure the base URL for links includes the /channel/ path
+    if '/channel/' in MEDIA_SPACE_BASE_URL:
+        link_base_url = MEDIA_SPACE_BASE_URL
+    else:
+        link_base_url = MEDIA_SPACE_BASE_URL.rstrip('/') + '/channel/'
+
     results = []
     for row in reader:
         channel_name = row[CHANNEL_NAME_HEADER].strip()
@@ -240,7 +248,7 @@ with open(INPUT_CSV, newline='', encoding='utf-8-sig') as csvfile:
             'channelName': channel_name,
             'categoryId': created_category.id,
             'channelLink': (
-                f"{MEDIA_SPACE_BASE_URL}"
+                f"{link_base_url}"
                 f"{quote_plus(quote_plus(channel_name))}/"
                 f"{created_category.id}"
             ),
