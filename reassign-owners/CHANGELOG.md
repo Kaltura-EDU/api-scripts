@@ -1,10 +1,22 @@
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file.
 
 The format is loosely based on Keep a Changelog.
+
+---
+
+## [1.1.0] - 2026-03-03
+
+### Added
+
+- New **entry_map mode** allowing reassignment of ownership for specific Kaltura entries using a CSV list of `entry_id -> owner_new` mappings.
+- Additional onscreen progress feedback during processing to make long runs easier to monitor.
+
+### Changed
+
+- Improved error handling and more user-friendly error messages when CSV input or API calls fail.
+- Output CSV now records results for every attempted entry, including success/failure status and error details.
 
 ---
 

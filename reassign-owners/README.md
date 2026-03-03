@@ -1,50 +1,68 @@
-
-
 # reassign-owners.py
 
-Reassigns ownership of Kaltura entries using a CSV mapping of old user IDs to new user IDs.
+Reassigns ownership of Kaltura entries using two supported modes:
 
-The script uses `baseEntry.list` to retrieve all entries owned by each specified user and `baseEntry.update` to change the owner (`userId`) to the new user.
+1. **User mode** – reassign all entries owned by one user to another user.
+2. **Entry mode** – reassign specific entries using a CSV mapping of entry IDs to new owner user IDs.
 
 ---
 
 ## What This Script Does
 
-For each row in the input CSV:
-
-1. Validates that both the old and new user IDs exist in Kaltura.
-2. Retrieves all entries owned by the old user (with pagination).
-3. Updates each entry’s owner to the new user.
-4. Logs each ownership change to a timestamped CSV file.
-5. Writes a summary file and an error log.
+1. Reads a CSV mapping file.
+2. Determines which mode the script is running in.
+   - **User mode:** each row maps an existing owner to a new owner.
+   - **Entry mode:** each row maps a specific `entry_id` to a new owner.
+3. Retrieves the relevant entries from Kaltura using `baseEntry.list` or `baseEntry.get`.
+4. Updates each entry’s owner (`userId`) to the specified new user.
+5. Logs the result of every attempted update to a timestamped CSV file.
+6. Writes a summary file and an error log.
 
 ---
 
 ## Input CSV Requirements
 
-The input file must contain two columns:
+The required CSV format depends on the mode used.
 
-- Old/current owner user ID
-- New owner user ID
+### Entry Mode (entry_map)
 
-The column header names are configurable in `.env`:
+Used when reassigning ownership of specific entries.
+
+Required columns:
+
+- `entry_id` — The Kaltura entry ID
+- `owner_new` — The new owner user ID
+
+Example:
 
 ```
-COLUMN_HEADER_OLD=old_username
-COLUMN_HEADER_NEW=new_username
+entry_id,owner_new
+1_abcd1234,multimedia@ucsd.edu
+1_efgh5678,multimedia@ucsd.edu
 ```
 
-Example CSV:
+Each row represents a single entry whose ownership should be reassigned.
+
+
+### User Mode (user_map)
+
+Used when reassigning **all entries owned by one user to another user**.
+
+Required columns:
+
+- `owner_old` — Current owner user ID
+- `owner_new` — New owner user ID
+
+Example:
 
 ```
-old_username,new_username
-jsmith,jdoe
-adoe,bdoe
+owner_old,owner_new
+jsmith,multimedia@ucsd.edu
+adoe,multimedia@ucsd.edu
 ```
 
-Blank usernames are not allowed and will cause the script to stop.
+All entries owned by `owner_old` will be reassigned to `owner_new`.
 
-If the same old user appears multiple times with conflicting new users, the script will stop and report the conflict.
 
 ---
 
@@ -64,8 +82,11 @@ Script configuration:
 
 ```
 INPUT_FILENAME=input.csv
-COLUMN_HEADER_OLD=old_username
-COLUMN_HEADER_NEW=new_username
+MODE=entry_map
+
+# Used only for user_map mode
+COLUMN_HEADER_OLD=owner_old
+COLUMN_HEADER_NEW=owner_new
 
 DRY_RUN=true
 MAX_WORKERS=10
@@ -108,10 +129,15 @@ reassignOwners_YYYY-MM-DD-HHMM_errors.txt
 Headers:
 
 ```
-entry_id,entry_name,owner_old,owner_new
+entry_id,entry_name,owner_old,owner_new,success,error
 ```
 
-Each successful update (or simulated update in DRY_RUN mode) is logged here.
+Every attempted update is logged here.
+
+- `success` will contain `success` or `fail`
+- `error` will contain the exception message if the operation failed
+
+This makes it easy to audit exactly which entries were processed and which ones require follow‑up.
 
 ### Summary File
 
@@ -134,7 +160,7 @@ Lists any entries that failed to update, including the error message returned by
 
 The script implements pagination using `KalturaFilterPager`.
 
-If a user owns 10,000 or more entries, Kaltura may cap results. The script will issue a warning if this threshold is reached.
+When running in **user_map mode**, if a user owns 10,000 or more entries, Kaltura may cap results. The script will issue a warning if this threshold is reached.
 
 ---
 
@@ -149,6 +175,8 @@ Each update includes:
 - Exponential backoff with jitter
 
 If all retries fail, the error is logged and processing continues.
+
+Because the Kaltura Python client is not guaranteed to be thread‑safe, the script protects API calls with an internal lock to prevent concurrent client access. This avoids intermittent errors when using multiple workers.
 
 ---
 
@@ -180,4 +208,10 @@ python3 reassign-owners.py
 - Avoid increasing worker count beyond recommended limits.
 - Keep secure credentials out of version control.
 
-This script assumes that all entries owned by each specified old user should be transferred.
+In `user_map` mode the script assumes that **all entries owned by each specified old user should be transferred**. In `entry_map` mode only the explicitly listed entry IDs are updated.
+
+
+Galen Davis  
+Senior Education Technology Specialist  
+UC San Diego  
+3 March 2026
