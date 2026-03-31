@@ -29,6 +29,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Improved header parsing: `ENTRY_ID_COLUMN_HEADER` normalizes column names (strip quotes / whitespace) so CSV headers with quotation marks work.
 - Updated instructions in README: added setup steps (virtualenv, dependencies, etc.).
 
+## [1.4.0] - 2026-03-30
+
+### Changed
+- Renamed script and directory from `delete-flavors` to `delete-nonsource-flavors` to better reflect its function.
+- Fixed tag filtering: `tagsLikeAny` is not a valid filter field and was silently ignored by the Kaltura client, causing tag-based entry selection to return all entries. Replaced with `tagsMultiLikeOr`.
+- Added `.env.example` and `.gitignore` to the repository.
+
 ## [1.3.0] - 2025-10-23
 
 ### Changed
