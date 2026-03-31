@@ -1,4 +1,4 @@
-# delete-flavors.py
+# delete-nonsource-flavors.py
 
 This script helps administrators efficiently manage Kaltura media storage by permanently removing all redundant flavors (transcoded versions) of media entries, keeping only the source flavor. Additionally, it generates a CSV report detailing the entries processed, the number of flavors deleted, and the total space saved. This tool is designed for administrators who need to remove a large number of flavors quickly, as batch deletion through the KMC is not feasible.
 
@@ -23,7 +23,7 @@ This script **permanently deletes flavors** and cannot be undone. They are **not
 4. Activate the virtual environment (`source venv/bin/activate` on macOS/Linux, `venv\Scripts\activate` on Windows).
 5. Install dependencies (`pip install -r requirements.txt`).
 6. Assign values in the `.env` file for your environment.
-7. Run the script (`python3 delete-flavors.py`).
+7. Run the script (`python3 delete-nonsource-flavors.py`).
 
 **Note:** The script generates reports in the `reports` subdirectory. Running it will permanently delete flavors and cannot be undone.
 

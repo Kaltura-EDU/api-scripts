@@ -68,6 +68,12 @@ CATEGORY_IDS = get_env_csv("CATEGORY_IDS")
 # Support for CSV-based entry ID selection
 CSV_FILENAME = os.getenv("CSV_FILENAME", "").strip()
 ENTRY_ID_COLUMN_HEADER = os.getenv("ENTRY_ID_COLUMN_HEADER", "").strip()
+
+# Populated by load_entry_ids_from_csv() when CSV mode is active.
+# Maps entry_id -> original row dict so output CSVs can preserve input columns.
+CSV_ORIGINAL_ROWS: Dict[str, Dict[str, str]] = {}
+CSV_ORIGINAL_FIELDNAMES: List[str] = []
+
 # =============================================================================
 # Helper for loading entry IDs from CSV ---------------------------------------
 # =============================================================================
@@ -77,7 +83,9 @@ def load_entry_ids_from_csv() -> List[str]:
     """
     Loads entry IDs from the specified CSV file and column.
     Returns a list of non-empty entry IDs (as strings).
+    Populates CSV_ORIGINAL_ROWS and CSV_ORIGINAL_FIELDNAMES as a side effect.
     """
+    global CSV_ORIGINAL_ROWS, CSV_ORIGINAL_FIELDNAMES
     if not CSV_FILENAME or not ENTRY_ID_COLUMN_HEADER:
         return []
     # Path relative to script directory
@@ -88,22 +96,29 @@ def load_entry_ids_from_csv() -> List[str]:
         with open(csv_path, "r", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             # Normalize headers: strip surrounding quotes and whitespace
-            reader.fieldnames = [h.strip().strip('"') for h in reader.fieldnames]
+            reader.fieldnames = [
+                h.strip().strip('"') for h in reader.fieldnames
+            ]
+            CSV_ORIGINAL_FIELDNAMES = list(reader.fieldnames)
             for row in reader:
                 eid = (row.get(ENTRY_ID_COLUMN_HEADER, "") or "").strip()
                 if eid:
                     entry_ids.append(eid)
+                    CSV_ORIGINAL_ROWS[eid] = dict(row)
     except Exception as ex:
-        print(f"[ERROR] Failed to load entry IDs from CSV: {csv_path}: {ex}", file=sys.stderr)
+        print(
+            f"[ERROR] Failed to load entry IDs from CSV: {csv_path}: {ex}",
+            file=sys.stderr,
+        )
         sys.exit(2)
     return entry_ids
 
 
 TS = now_stamp()
 
-# Ensure outputs go into a "reports" subfolder alongside this script
+# Ensure outputs go into an "output" subfolder alongside this script
 REPORTS_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "reports"
+    os.path.dirname(os.path.abspath(__file__)), "output"
     )
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
@@ -165,7 +180,7 @@ def pick_source_flavor(flavor_objects) -> Tuple[Optional[str], Optional[str]]:
         except Exception:
             pass
 
-    # 3) largest by size
+    # 3) largest by size (fallback — review preview CSV before confirming)
     max_fa = None
     max_size = -1
     for fa in flavor_objects:
@@ -174,6 +189,12 @@ def pick_source_flavor(flavor_objects) -> Tuple[Optional[str], Optional[str]]:
             max_size = size_b
             max_fa = fa
     if max_fa is not None:
+        print(
+            f"[WARN] No isOriginal or 'source' tag found; "
+            f"assuming largest flavor "
+            f"({getattr(max_fa, 'id', '?')}) is source. "
+            f"Verify in preview CSV before confirming."
+        )
         return getattr(max_fa, "id", None), "largest"
 
     return None, None
@@ -183,8 +204,16 @@ def list_flavors(entry_id: str):
     ff = KalturaFlavorAssetFilter()
     ff.entryIdEqual = entry_id
     pager = KalturaFilterPager(pageSize=500, pageIndex=1)
-    resp = client.flavorAsset.list(ff, pager)
-    return [] if not resp else (resp.objects or [])
+    flavors = []
+    while True:
+        resp = client.flavorAsset.list(ff, pager)
+        if not resp or not getattr(resp, "objects", None):
+            break
+        flavors.extend(resp.objects)
+        if len(resp.objects) < pager.pageSize:
+            break
+        pager.pageIndex += 1
+    return flavors
 
 
 def list_children(entry_id: str):
@@ -254,7 +283,7 @@ def iter_selected_entries() -> List:
     f = KalturaMediaEntryFilter()
     if TAGS:
         # CSV of tags – server matches ANY
-        f.tagsLikeAny = ",".join(TAGS)
+        f.tagsMultiLikeOr = ",".join(TAGS)
     if CATEGORY_IDS:
         # CSV of category IDs – "match OR" semantics
         f.categoriesIdsMatchOr = ",".join(CATEGORY_IDS)
@@ -278,28 +307,27 @@ def iter_selected_entries() -> List:
     return selected
 
 
-def write_csv(path: str, rows: List[Dict[str, str]]):
-    if not rows:
-        # still write header
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=[
-                "role", "entry_id", "parent_entry_id", "entry_name",
-                "owner_user_id", "conversion_profile_id", "total_flavors",
-                "source_flavor_id", "source_reason", "flavors_to_delete",
-                "flavors_deleted_count", "kilobytes_saved", "is_multistream",
-                "child_count", "status", "error"
-            ])
-            w.writeheader()
-        return
+SCRIPT_FIELDNAMES = [
+    "role", "entry_id", "parent_entry_id", "entry_name",
+    "owner_user_id", "conversion_profile_id", "total_flavors",
+    "source_flavor_id", "source_reason", "flavors_to_delete",
+    "flavors_deleted_count", "kilobytes_saved", "is_multistream",
+    "child_count", "status", "error",
+]
+
+
+def write_csv(path: str, rows: List[Dict[str, str]],
+              extra_fieldnames: Optional[List[str]] = None):
+    # Original CSV columns come first; script columns are appended after,
+    # skipping any that already appear in the original column list.
+    fieldnames: List[str] = list(extra_fieldnames or [])
+    for fn in SCRIPT_FIELDNAMES:
+        if fn not in fieldnames:
+            fieldnames.append(fn)
 
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=[
-            "role", "entry_id", "parent_entry_id", "entry_name",
-            "owner_user_id", "conversion_profile_id", "total_flavors",
-            "source_flavor_id", "source_reason", "flavors_to_delete",
-            "flavors_deleted_count", "kilobytes_saved", "is_multistream",
-            "child_count", "status", "error"
-        ])
+        w = csv.DictWriter(f, fieldnames=fieldnames,
+                           extrasaction="ignore", restval="")
         w.writeheader()
         w.writerows(rows)
 
@@ -316,11 +344,14 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
     owner = getattr(e, "userId", "")
     conv = getattr(e, "conversionProfileId", "")
 
+    # Seed with original CSV row data (if CSV mode); script fields overwrite on collision.
+    original = CSV_ORIGINAL_ROWS.get(parent_id, {})
+
     # List flavors for the parent
     try:
         flavors = list_flavors(parent_id)
     except Exception as ex:
-        rows.append({
+        rows.append({**original, **{
             "role": "PARENT",
             "entry_id": parent_id,
             "parent_entry_id": "",
@@ -336,10 +367,8 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             "is_multistream": "",
             "child_count": "",
             "status": "ERROR",
-            "error": (
-                f"flavorAsset.list failed: {ex}"
-            ),
-        })
+            "error": f"flavorAsset.list failed: {ex}",
+        }})
         return rows
 
     total = len(flavors)
@@ -353,7 +382,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             )
 
     if total <= 1:
-        rows.append({
+        rows.append({**original, **{
             "role": "PARENT",
             "entry_id": parent_id,
             "parent_entry_id": "",
@@ -370,11 +399,11 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             "child_count": str(len(children)) if children else "0",
             "status": "SKIPPED_SINGLE_FLAVOR",
             "error": "",
-        })
+        }})
     else:
         src_id, src_reason = pick_source_flavor(flavors)
         if not src_id:
-            rows.append({
+            rows.append({**original, **{
                 "role": "PARENT",
                 "entry_id": parent_id,
                 "parent_entry_id": "",
@@ -391,10 +420,10 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
                 "child_count": str(len(children)) if children else "0",
                 "status": "SKIPPED_NO_SOURCE_DETECTED",
                 "error": "",
-            })
+            }})
         else:
             to_delete_ids: List[str] = []
-            bytes_saved = 0
+            kb_saved = 0
             for fa in flavors:
                 fa_id = getattr(fa, "id", "")
                 fa_flavor_id = str(getattr(fa, "flavorParamsId", ""))
@@ -405,8 +434,8 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
                 if fa_flavor_id in ADDITIONAL_FLAVORS_TO_KEEP:
                     continue
                 to_delete_ids.append(fa_id)
-                bytes_saved += _as_int(getattr(fa, "size", 0))
-            rows.append({
+                kb_saved += _as_int(getattr(fa, "size", 0))
+            rows.append({**original, **{
                 "role": "PARENT",
                 "entry_id": parent_id,
                 "parent_entry_id": "",
@@ -418,12 +447,12 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
                 "source_reason": src_reason or "",
                 "flavors_to_delete": ",".join(to_delete_ids),
                 "flavors_deleted_count": str(len(to_delete_ids)),
-                "kilobytes_saved": str(bytes_saved),
+                "kilobytes_saved": str(kb_saved),
                 "is_multistream": is_multi,
                 "child_count": str(len(children)) if children else "0",
                 "status": "READY",
                 "error": "",
-            })
+            }})
 
     # Process each child similarly (note: we do NOT recurse to grandchildren)
     for c in children:
@@ -501,7 +530,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             continue
 
         c_to_delete: List[str] = []
-        c_bytes_saved = 0
+        c_kb_saved = 0
         for fa in cflavors:
             fa_id = getattr(fa, "id", "")
             fa_flavor_id = str(getattr(fa, "flavorParamsId", ""))
@@ -512,7 +541,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             if fa_flavor_id in ADDITIONAL_FLAVORS_TO_KEEP:
                 continue
             c_to_delete.append(fa_id)
-            c_bytes_saved += _as_int(getattr(fa, "size", 0))
+            c_kb_saved += _as_int(getattr(fa, "size", 0))
 
         rows.append({
             "role": "CHILD",
@@ -526,7 +555,7 @@ def build_preview_rows_for_entry(e) -> List[Dict[str, str]]:
             "source_reason": csrc_reason or "",
             "flavors_to_delete": ",".join(c_to_delete),
             "flavors_deleted_count": str(len(c_to_delete)),
-            "kilobytes_saved": str(c_bytes_saved),
+            "kilobytes_saved": str(c_kb_saved),
             "is_multistream": "",
             "child_count": "",
             "status": "READY",
@@ -551,7 +580,7 @@ def main():
         rows_for_entry = build_preview_rows_for_entry(e)
         preview_rows.extend(rows_for_entry)
 
-    write_csv(PREVIEW_CSV, preview_rows)
+    write_csv(PREVIEW_CSV, preview_rows, CSV_ORIGINAL_FIELDNAMES)
     print(f"[INFO] Wrote pre-deletion plan → {PREVIEW_CSV}")
 
     # Any actually deletable entries?
@@ -630,7 +659,7 @@ def main():
         rr["error"] = error.strip("; ")
         result_rows.append(rr)
 
-    write_csv(RESULT_CSV, result_rows)
+    write_csv(RESULT_CSV, result_rows, CSV_ORIGINAL_FIELDNAMES)
     print(f"\n[INFO] Wrote results → {RESULT_CSV}")
     print("[DONE]")
 
