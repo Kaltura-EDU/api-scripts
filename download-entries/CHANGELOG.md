@@ -1,5 +1,9 @@
 # Changelog – download-entries.py
 
+## [v1.4.0] – 2026-04-29
+### Added
+- Resume support: files that already exist in the download folder are skipped, allowing interrupted runs to be safely restarted.
+
 ## [v1.3.0] – 2025-11-20
 ### Added
 - Enhanced security: Admin Secret is now hidden during terminal input using `getpass`. (Galen Davis, UCSD)

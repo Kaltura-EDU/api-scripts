@@ -16,6 +16,8 @@ The script downloads entries sequentially (not threaded) for simplicity and reli
 - Optionally removes `(Source)` and trailing underscores/dashes from filenames via a `REMOVE_SUFFIX` global variable (default: `True`)
 - Handles child entries (e.g., clips or derivatives)
 - Supports category hierarchy — if you provide a category ID, the script will also include entries from any subcategories
+- Skips files that already exist in the download folder, so interrupted runs can be safely resumed
+- Admin secret input is masked (not displayed) when entered at the prompt
 
 ## Caveats
 - Some users may experience API hanging or slow responses. If that happens, try running the script while connected to your institution's VPN. (In testing, this resolved download hangs.)
@@ -63,4 +65,4 @@ Andy Clark
 Systems Administrator, Learning Systems  
 Baylor University  
 
-*Last updated 2025-05-05*
+*Last updated 2026-04-29*

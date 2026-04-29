@@ -14,6 +14,7 @@ Be sure to provide your partner ID and admin secret in the global variables
 before running the script.
 '''
 
+import getpass
 import os
 import time
 import requests
@@ -25,7 +26,6 @@ from KalturaClient.Plugins.Core import (
 )
 from KalturaClient.exceptions import KalturaException
 import re
-import getpass
 
 # ---- CONFIGURABLE VARIABLES ----
 # PARTNER_ID = "" DO NOT USE--script will request input
@@ -145,9 +145,9 @@ def get_download_url(client, entry):
     return get_flavor_download_url(client, entry)
 
 
-def get_file_name(url, counter=0):
-    """Extract the filename directly from the URL or HTTP response headers,
-    avoiding overwrites."""
+def get_file_name(url):
+    """Extract the filename from the URL or HTTP response headers.
+    Returns None if the file already exists in the download folder."""
     filename = None
 
     try:
@@ -162,24 +162,14 @@ def get_file_name(url, counter=0):
     if not filename:
         filename = os.path.basename(urlparse(url).path)
 
-    # 🔍 Clean up filename if REMOVE_SUFFIX is enabled
     if REMOVE_SUFFIX:
         base, ext = os.path.splitext(filename)
-
-        # Remove (Source), with or without surrounding spaces/underscores
         base = re.sub(r"[\s_]*\(Source\)[\s_]*", "", base)
-
-        # Clean up trailing underscore, space, or dash
         base = re.sub(r"[_\-\s]+$", "", base)
-
         filename = f"{base}{ext}"
 
-    file_path = os.path.join(DOWNLOAD_FOLDER, filename)
-    while os.path.exists(file_path):
-        counter += 1
-        base, ext = os.path.splitext(filename)
-        filename = f"{base}_{counter}{ext}"
-        file_path = os.path.join(DOWNLOAD_FOLDER, filename)
+    if os.path.exists(os.path.join(DOWNLOAD_FOLDER, filename)):
+        return None  # Already downloaded
 
     return filename
 
@@ -231,8 +221,14 @@ def process_entry(client, entry, index):
     url = get_download_url(client, entry)
     if url:
         filename = get_file_name(url)
-        print(f"{index}. ✅ Downloaded: {filename}")
-        download_file(url, filename)
+        if filename is None:
+            print(
+                f"{index}. ⏭️ Skipping {entry.id} ({entry.name}): "
+                f"already downloaded."
+                )
+        else:
+            download_file(url, filename)
+            print(f"{index}. ✅ Downloaded: {filename}")
     else:
         print(
             f"{index}. ⚠️ Skipping {entry.id} ({entry.name}): No valid "
@@ -244,8 +240,14 @@ def process_entry(client, entry, index):
         child_url = get_download_url(client, child)
         if child_url:
             child_filename = get_file_name(child_url)
-            print(f"{index}. ✅ Downloaded child: {child_filename}")
-            download_file(child_url, child_filename)
+            if child_filename is None:
+                print(
+                    f"{index}. ⏭️ Skipping child {child.id} "
+                    f"({child.name}): already downloaded."
+                    )
+            else:
+                download_file(child_url, child_filename)
+                print(f"{index}. ✅ Downloaded child: {child_filename}")
         else:
             print(
                 f"{index}. ⚠️ Skipping child entry {child.id} ({child.name}): "
@@ -255,7 +257,6 @@ def process_entry(client, entry, index):
 
 def main():
     partner_id = input("Enter your Partner ID: ").strip()
-    import getpass
     admin_secret = getpass.getpass("Enter your Admin Secret: ").strip()
 
     client = get_kaltura_client(partner_id, admin_secret)
