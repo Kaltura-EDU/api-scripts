@@ -16,6 +16,8 @@ before running the script.
 
 import getpass
 import os
+import subprocess
+import sys
 import time
 import requests
 from urllib.parse import urlparse
@@ -294,9 +296,21 @@ def main():
 
     print(f"Found {len(entries)} entries. Starting downloads...")
 
-    # Process one entry at a time (no threading)
-    for idx, entry in enumerate(entries, start=1):
-        process_entry(client, entry, idx)
+    caffeinate = None
+    if sys.platform == "darwin":
+        try:
+            caffeinate = subprocess.Popen(["caffeinate", "-i"])
+            print("☕ Keeping your Mac awake for the duration of the download.")
+        except FileNotFoundError:
+            pass
+
+    try:
+        # Process one entry at a time (no threading)
+        for idx, entry in enumerate(entries, start=1):
+            process_entry(client, entry, idx)
+    finally:
+        if caffeinate:
+            caffeinate.terminate()
 
     print("✅ All downloads complete!")
 
