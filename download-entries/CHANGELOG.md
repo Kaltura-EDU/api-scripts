@@ -1,5 +1,9 @@
 # Changelog – download-entries.py
 
+## [v1.5.0] – 2026-04-30
+### Added
+- macOS sleep prevention: the script now launches `caffeinate -i` at the start of a download run and terminates it when the run completes, preventing the computer from sleeping mid-download.
+
 ## [v1.4.0] – 2026-04-29
 ### Added
 - Resume support: files that already exist in the download folder are skipped, allowing interrupted runs to be safely restarted.
