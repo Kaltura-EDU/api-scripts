@@ -1,5 +1,9 @@
 # Changelog
 
+## [v1.3.0] - 2026-04-30
+### Changed
+- Output filename format standardized: timestamp moved to the beginning of the filename and format updated to `YYYY-MM-DD-HHMM`. New format: `YYYY-MM-DD-HHMM_CrossInstanceDuplication.csv`.
+
 ## [v1.2.0] - 2025-05-05
 ### Changed
 - Main function now prompts user for Partner ID and Admin Secret for both source and destination.

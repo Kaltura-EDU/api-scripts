@@ -1,5 +1,9 @@
 # Changelog
 
+## [v1.2.0] - 2026-04-30
+### Changed
+- Output filename format updated: timestamp moved to the beginning of the filename. New format: `YYYY-MM-DD-HHMM_EntriesRenamed.csv`.
+
 ## [v1.1.0] - 2025-05-05
 ### Changed
 - Main function now prompts user for Partner ID and Admin Secret

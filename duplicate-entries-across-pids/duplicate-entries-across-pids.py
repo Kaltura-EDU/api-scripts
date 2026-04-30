@@ -68,7 +68,7 @@ DESTINATION_TAG = ""
 # -- END CONFIGURABLE VARIABLES --
 
 CSV_FILENAME = (
-    f"CrossInstanceDuplication_{datetime.now().strftime('%Y%m%d%H%M')}.csv"
+    f"{datetime.now().strftime('%Y-%m-%d-%H%M')}_CrossInstanceDuplication.csv"
 )
 
 

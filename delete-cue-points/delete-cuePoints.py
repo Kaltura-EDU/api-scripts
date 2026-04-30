@@ -152,21 +152,21 @@ def list_and_delete_cue_points(client, entry_ids, cue_point_type):
         rows.sort(key=lambda x: x[4])
 
     # Determine CSV filename
-    now = datetime.now().strftime("%Y%m%d%H%M")
+    now = datetime.now().strftime("%Y-%m-%d-%H%M")
     if cue_point_type == "quiz.QUIZ_QUESTION":
-        filename = f"quiz-questions-deleted_{now}.csv"
+        filename = f"{now}_quiz-questions-deleted.csv"
         headers = [
             "Entry ID", "Entry Title", "Question Type", "Question",
             "Option 1", "Option 2", "Option 3", "Option 4", "Correct Answer"
             ]
     elif cue_point_type == "quiz.QUIZ_ANSWER":
-        filename = f"quiz-answers-deleted_{now}.csv"
+        filename = f"{now}_quiz-answers-deleted.csv"
         headers = [
             "Entry ID", "Entry Title", "User ID", "Date Submitted",
             "Question", "Answer", "Correct"
             ]
     elif cue_point_type == "thumbCuePoint.Thumb":
-        filename = f"chapters-deleted_{now}.csv"
+        filename = f"{now}_chapters-deleted.csv"
         headers = [
             "Entry ID", "Entry Title", "Chapter Title", "Chapter Description",
             "Start Time (Seconds)"

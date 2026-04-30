@@ -6,6 +6,14 @@ The format is loosely based on Keep a Changelog.
 
 ---
 
+## [1.2.0] - 2026-04-30
+
+### Changed
+
+- Output filenames updated: timestamp moved to the beginning of each filename for consistent chronological sorting. New format: `YYYY-MM-DD-HHMM_reassignOwners_[dryRun|live].csv`, `..._summary.txt`, `...errors.txt`.
+
+---
+
 ## [1.1.0] - 2026-03-03
 
 ### Added

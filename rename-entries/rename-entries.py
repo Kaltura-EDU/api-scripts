@@ -170,7 +170,7 @@ def main():
     # Prepare CSV output
     now = datetime.now()
     timestamp_str = now.strftime("%Y-%m-%d-%H%M")
-    csv_filename = f"EntriesRenamed_{timestamp_str}.csv"
+    csv_filename = f"{timestamp_str}_EntriesRenamed.csv"
 
     with open(csv_filename, mode='w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
