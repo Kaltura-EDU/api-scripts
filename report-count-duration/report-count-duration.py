@@ -374,7 +374,7 @@ if EXPORT_CSV:
         RESTRICTION_INTERVAL, "custom"
     )
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H%M")
 
     # Sanitize tag/category text for filenames
     owner_label = OWNER_ID if OWNER_ID else "noOwner"
@@ -382,14 +382,14 @@ if EXPORT_CSV:
     cat_label = CATEGORY_ID if CATEGORY_ID else "noCategory"
 
     summary_filename = (
-        "video_summary_"
+        f"{timestamp}_video_summary_"
         f"{PARTNER_ID}_{tag_label}_{cat_label}_{owner_label}_"
-        f"{interval_label}_{timestamp}.csv"
+        f"{interval_label}.csv"
     )
     details_filename = (
-        "video_details_"
+        f"{timestamp}_video_details_"
         f"{PARTNER_ID}_{tag_label}_{cat_label}_{owner_label}_"
-        f"{interval_label}_{timestamp}.csv"
+        f"{interval_label}.csv"
     )
 
     with open(summary_filename, "w", newline="") as f:

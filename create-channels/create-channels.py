@@ -61,6 +61,10 @@ if not MEDIA_SPACE_BASE_URL:
     raise ValueError(
         "MEDIA_SPACE_BASE_URL must be set in your .env file before running."
     )
+if not PARENT_ID:
+    raise ValueError(
+        "PARENT_ID must be set in your .env file before running."
+    )
 
 # Convert PARENT_ID to int where used later; keep string now to allow empty
 # check. Allow input/output CSV configuration from .env, with sensible defaults
@@ -72,16 +76,17 @@ if not os.path.exists(INPUT_CSV):
         f"🚨 File '{INPUT_CSV}' not found in directory: {os.getcwd()}"
         )
 
-REPORTS_DIR = "Reports"
+REPORTS_DIR = "output"
 os.makedirs(REPORTS_DIR, exist_ok=True)
-timestamp = datetime.now().strftime("%Y-%m-%d-T%H%M")
+timestamp = datetime.now().strftime("%Y-%m-%d-%H%M")
 OUTPUT_CSV = os.path.join(
     REPORTS_DIR, f"{timestamp}_report_create-channels.csv"
     )
 
 # INITIALIZE CLIENT -----------------------------------------------------------
+SERVICE_URL = os.getenv("SERVICE_URL", "https://www.kaltura.com/")
 config = KalturaConfiguration(PARTNER_ID)
-config.serviceUrl = "https://www.kaltura.com/"
+config.serviceUrl = SERVICE_URL
 client = KalturaClient(config)
 
 ks = client.session.start(
@@ -197,73 +202,77 @@ with open(INPUT_CSV, newline='', encoding='utf-8-sig') as csvfile:
         link_base_url = MEDIA_SPACE_BASE_URL.rstrip('/') + '/channel/'
 
     results = []
-    for row in reader:
-        channel_name = row[CHANNEL_NAME_HEADER].strip()
-        owner = row[OWNER_ID_HEADER].strip()
-        privacy_raw = row[PRIVACY_SETTING_HEADER].strip()
-        if not privacy_raw:
-            raise ValueError(
-                f"Missing 'privacy' value for channel "
-                f"'{row[CHANNEL_NAME_HEADER]}'. "
-                "Please ensure all rows in your CSV include a valid "
-                "privacy level (1, 2, or 3)."
-            )
-        privacy = int(privacy_raw)
-        members = [
-            m.strip() for m in row[CHANNEL_MEMBERS_HEADER].split(',')
-            if m.strip()
-            ]
+    try:
+        for row in reader:
+            channel_name = row[CHANNEL_NAME_HEADER].strip()
+            owner = row[OWNER_ID_HEADER].strip()
+            privacy_raw = row[PRIVACY_SETTING_HEADER].strip()
+            if not privacy_raw:
+                raise ValueError(
+                    f"Missing 'privacy' value for channel "
+                    f"'{row[CHANNEL_NAME_HEADER]}'. "
+                    "Please ensure all rows in your CSV include a valid "
+                    "privacy level (1, 2, or 3)."
+                )
+            privacy = int(privacy_raw)
+            members = [
+                m.strip() for m in row.get(CHANNEL_MEMBERS_HEADER, '').split(',')
+                if m.strip()
+                ]
 
-        category = KalturaCategory()
-        category.name = channel_name
-        category.owner = owner
-        category.privacy = privacy
-        category.userJoinPolicy = USER_JOIN_POLICY
-        category.appearInList = APPEAR_IN_LIST
-        category.inheritanceType = INHERITANCE_TYPE
-        category.defaultPermissionLevel = DEFAULT_PERMISSION_LEVEL
-        category.contributionPolicy = CONTRIBUTION_POLICY
-        category.moderation = MODERATION
-        category.parentId = int(PARENT_ID)
-        category.privacyContext = PRIVACY_CONTEXT
+            category = KalturaCategory()
+            category.name = channel_name
+            category.owner = owner
+            category.privacy = privacy
+            category.userJoinPolicy = USER_JOIN_POLICY
+            category.appearInList = APPEAR_IN_LIST
+            category.inheritanceType = INHERITANCE_TYPE
+            category.defaultPermissionLevel = DEFAULT_PERMISSION_LEVEL
+            category.contributionPolicy = CONTRIBUTION_POLICY
+            category.moderation = MODERATION
+            category.parentId = int(PARENT_ID)
+            category.privacyContext = PRIVACY_CONTEXT
 
-        created_category = client.category.add(category)
-        print(
-            f"Created channel: {created_category.id} "
-            f"({channel_name}) [Owner: {owner}]"
-            )
+            created_category = client.category.add(category)
+            print(
+                f"Created channel: {created_category.id} "
+                f"({channel_name}) [Owner: {owner}]"
+                )
 
-        # Add members
-        for member in members:
-            category_user = KalturaCategoryUser()
-            category_user.categoryId = created_category.id
-            category_user.userId = member
-            category_user.permissionLevel = (
-                KalturaCategoryUserPermissionLevel.MEMBER
-            )
-            client.categoryUser.add(category_user)
-            print(f"  Added member: {member}")
+            # Add members
+            for member in members:
+                category_user = KalturaCategoryUser()
+                category_user.categoryId = created_category.id
+                category_user.userId = member
+                category_user.permissionLevel = (
+                    KalturaCategoryUserPermissionLevel.MEMBER
+                )
+                client.categoryUser.add(category_user)
+                print(f"  Added member: {member}")
 
-        results.append({
-            'channelName': channel_name,
-            'categoryId': created_category.id,
-            'channelLink': (
-                f"{link_base_url}"
-                f"{quote_plus(quote_plus(channel_name))}/"
-                f"{created_category.id}"
-            ),
-            'membersAdded': ', '.join(members),
-            'owner': owner,
-        })
+            results.append({
+                'channelName': channel_name,
+                'categoryId': created_category.id,
+                'channelLink': (
+                    f"{link_base_url}"
+                    f"{quote_plus(quote_plus(channel_name))}/"
+                    f"{created_category.id}"
+                ),
+                'membersAdded': ', '.join(members),
+                'owner': owner,
+            })
+    finally:
+        # WRITE RESULTS CSV ---------------------------------------------------
+        # Always write whatever was completed, even if an error interrupted the run.
+        if results:
+            with open(OUTPUT_CSV, mode='w', newline='', encoding='utf-8') as csvfile:
+                fieldnames = [
+                    'channelName', 'categoryId', 'channelLink',
+                    'membersAdded', 'owner'
+                    ]
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(results)
+            print(f"\nResults saved to {OUTPUT_CSV}.")
 
-
-# WRITE RESULTS CSV -----------------------------------------------------------
-with open(OUTPUT_CSV, mode='w', newline='', encoding='utf-8') as csvfile:
-    fieldnames = [
-        'channelName', 'categoryId', 'channelLink', 'membersAdded', 'owner'
-        ]
-    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-    writer.writeheader()
-    writer.writerows(results)
-
-print(f"\nAll channels created. Results saved to {OUTPUT_CSV}.")
+print(f"\nAll channels created successfully.")

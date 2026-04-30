@@ -1,5 +1,10 @@
 ## Changelog for create-channels.py
 
+### [1.3.0] - 2026-04-30
+
+#### Changed
+* Output filename timestamp format corrected from `%Y-%m-%dT%H%M` to `%Y-%m-%d-%H%M` (removed the `T` separator) for consistency with other scripts in the repository.
+
 ### [1.2.1] - 2026-02-04
 
 #### Changed

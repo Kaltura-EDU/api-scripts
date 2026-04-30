@@ -127,7 +127,7 @@ def main():
     now = datetime.now()
     # Format: YYYY-MM-DD-HHMM
     timestamp_str = now.strftime("%Y-%m-%d-%H%M")
-    csv_filename = f"QuizzesCloned_{timestamp_str}.csv"
+    csv_filename = f"{timestamp_str}_QuizzesCloned.csv"
 
     # Open CSV file and write header
     with open(csv_filename, mode='w', newline='', encoding='utf-8') as csvfile:

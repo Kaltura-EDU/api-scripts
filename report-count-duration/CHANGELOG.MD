@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.6 – 30 April 2026
+- Output filename format standardized: timestamp moved to the beginning of each filename and format updated to `YYYY-MM-DD-HHMM` for consistent chronological sorting across all scripts in the repository.
+- Updated README to reflect new filename format.
+
 ## v1.5 – 25 June 2025
 - Added other fields to CSV exports: `media_type, lastplayed_at, plays, categories, tags, flavor_count, flavor_size_sum`
 - Added `python-dotenv` for better managing the Kaltura secrets

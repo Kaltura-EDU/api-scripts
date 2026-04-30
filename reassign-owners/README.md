@@ -119,10 +119,12 @@ Number of entries retrieved per page (1–500).
 All output files are timestamped:
 
 ```
-reassignOwners_YYYY-MM-DD-HHMM.csv
-reassignOwners_YYYY-MM-DD-HHMM_summary.txt
-reassignOwners_YYYY-MM-DD-HHMM_errors.txt
+YYYY-MM-DD-HHMM_reassignOwners_dryRun.csv
+YYYY-MM-DD-HHMM_reassignOwners_dryRun_summary.txt
+YYYY-MM-DD-HHMM_reassignOwners_dryRun_errors.txt
 ```
+
+(Replace `dryRun` with `live` when running with `DRY_RUN=false`.)
 
 ### Main Output CSV
 

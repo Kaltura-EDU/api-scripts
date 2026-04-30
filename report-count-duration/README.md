@@ -55,8 +55,8 @@ CSV files are saved automatically in your working directory. Filenames include:
 - A timestamp to avoid overwriting previous runs
 
 Example filenames:  
-`video_summary_uc_san_diego_podcast_216135363_month_20250312_143012.csv`  
-`video_details_uc_san_diego_podcast_216135363_month_20250312_143012.csv`
+`2025-03-12-1430_video_summary_216135363_uc_san_diego_podcast_noCategory_noOwner_month.csv`  
+`2025-03-12-1430_video_details_216135363_uc_san_diego_podcast_noCategory_noOwner_month.csv`
 
 The **detailed CSV** includes the following columns:
 - `entryId`

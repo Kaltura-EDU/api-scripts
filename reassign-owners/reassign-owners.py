@@ -1,4 +1,9 @@
-"""Reassign Kaltura entry ownership using a CSV mapping of old_user -> new_user.
+"""Reassign Kaltura entry ownership.
+
+Supports three modes (set MODE in .env):
+  owner_map  — CSV of old_user -> new_user; reassigns ALL entries owned by each old user.
+  entry_map  — CSV of entry_id -> owner_new; reassigns only the listed entry IDs.
+  tag        — Finds all entries with a given tag (TAG) and reassigns them to TAG_NEW_OWNER.
 
 Uses baseEntry.list and baseEntry.update.
 Supports pagination, DRY_RUN, retries/backoff, and concurrency.
@@ -97,6 +102,41 @@ _CLIENT_LOCK = threading.Lock()
 def _print_progress(message: str) -> None:
     # Always flush so feedback appears immediately in long runs.
     print(message, flush=True)
+
+
+_STATUS_LABELS: Dict[str, str] = {
+    "-1": "PENDING",
+    "0": "IMPORT",
+    "1": "PRECONVERT",
+    "2": "READY",
+    "-2": "MODERATE",
+    "-3": "BLOCKED",
+    "-4": "DELETED",
+    "7": "NO_CONTENT",
+}
+
+
+def _status_breakdown(entries: "List[KalturaBaseEntry]") -> str:
+    """Return a formatted status-count breakdown for a list of entries.
+
+    Uses data already present on the entry objects — no extra API calls.
+    """
+    counts: Dict[str, int] = {}
+    for e in entries:
+        status = getattr(e, "status", None)
+        # KalturaEntryStatus exposes its code via .value; fall back gracefully.
+        val = str(getattr(status, "value", status)) if status is not None else "?"
+        label = _STATUS_LABELS.get(val, f"STATUS({val})")
+        counts[label] = counts.get(label, 0) + 1
+
+    if not counts:
+        return ""
+
+    sorted_counts = sorted(counts.items(), key=lambda x: -x[1])
+    width = len(str(max(c for _, c in sorted_counts)))
+    return "\n".join(
+        f"  {count:{width}}  {label}" for label, count in sorted_counts
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -472,6 +512,59 @@ def iter_entries_by_owner(
         page_index += 1
 
 
+def iter_entries_by_tag(
+    client: KalturaClient,
+    tag: str,
+    page_size: int,
+    status_in: str = "",
+) -> Iterable[KalturaBaseEntry]:
+    entry_filter = KalturaBaseEntryFilter()
+    entry_filter.tagsMultiLikeAnd = tag
+    if status_in:
+        entry_filter.statusIn = status_in
+
+    pager = KalturaFilterPager()
+    pager.pageSize = page_size
+
+    page_index = 1
+    total_count: Optional[int] = None
+
+    while True:
+        pager.pageIndex = page_index
+        if page_index == 1:
+            print(
+                f"Listing entries with tag {tag!r} (pageSize={page_size})...",
+                flush=True,
+            )
+        else:
+            print(
+                f"  Fetching page {page_index} for tag {tag!r}...",
+                flush=True,
+            )
+        result = client.baseEntry.list(entry_filter, pager)
+
+        if total_count is None:
+            total_count = int(getattr(result, "totalCount", 0) or 0)
+            if total_count >= 10000:
+                print(
+                    f"WARNING: totalCount >= 10,000 for tag {tag!r}. "
+                    "Results may be capped by the API.",
+                    file=sys.stderr,
+                )
+
+        objects = getattr(result, "objects", None) or []
+        if not objects:
+            break
+
+        for obj in objects:
+            yield obj
+
+        if len(objects) < page_size:
+            break
+
+        page_index += 1
+
+
 def _sleep_request_delay(delay_sec: float) -> None:
     if delay_sec > 0:
         time.sleep(delay_sec)
@@ -612,6 +705,14 @@ def main() -> int:
     validate_progress_every = _env_int("VALIDATE_PROGRESS_EVERY", default=10)
     validate_new_users = _env_bool("VALIDATE_NEW_USERS", default=False)
 
+    # tag mode settings
+    tag = os.getenv("TAG", "").strip()
+    tag_new_owner = os.getenv("TAG_NEW_OWNER", "").strip()
+    # All non-deleted statuses by default: PENDING(-1), IMPORT(0), PRECONVERT(1),
+    # READY(2), MODERATE(-2), BLOCKED(-3), NO_CONTENT(7). Set to "" to use
+    # Kaltura's own default (which may exclude some statuses).
+    tag_status_in = os.getenv("TAG_STATUS_IN", "-1,0,1,2,-2,-3,7").strip()
+
     ts = _timestamp_tttt(timezone_name)
 
     output_dir = "output"
@@ -619,20 +720,25 @@ def main() -> int:
 
     run_tag = "dryRun" if dry_run else "live"
 
-    out_csv = os.path.join(output_dir, f"reassignOwners_{run_tag}_{ts}.csv")
+    out_csv = os.path.join(output_dir, f"{ts}_reassignOwners_{run_tag}.csv")
     out_summary = os.path.join(
         output_dir,
-        f"reassignOwners_{run_tag}_{ts}_summary.txt",
+        f"{ts}_reassignOwners_{run_tag}_summary.txt",
     )
     out_errors = os.path.join(
         output_dir,
-        f"reassignOwners_{run_tag}_{ts}_errors.txt",
+        f"{ts}_reassignOwners_{run_tag}_errors.txt",
     )
 
     _print_progress("\n=== Reassign Owners (baseEntry) ===")
     _print_progress(f"Timestamp: {ts} ({timezone_name})")
     _print_progress(f"Input CSV: {input_filename}")
     _print_progress(f"MODE: {mode}")
+    if mode == "tag":
+        _print_progress(
+            f"TAG: {tag!r} | TAG_NEW_OWNER: {tag_new_owner!r} | "
+            f"TAG_STATUS_IN: {tag_status_in!r}"
+        )
     _print_progress(f"DRY_RUN: {dry_run}")
     _print_progress(f"MAX_WORKERS: {max_workers} | PAGE_SIZE: {page_size}")
     _print_progress(
@@ -652,8 +758,14 @@ def main() -> int:
         # Kaltura often allows up to 500; keep it reasonable.
         raise ValueError("PAGE_SIZE must be between 1 and 500")
 
-    if mode not in {"owner_map", "entry_map"}:
-        raise ValueError("MODE must be 'owner_map' or 'entry_map'.")
+    if mode not in {"owner_map", "entry_map", "tag"}:
+        raise ValueError("MODE must be 'owner_map', 'entry_map', or 'tag'.")
+
+    if mode == "tag":
+        if not tag:
+            raise ValueError("TAG must be set when MODE=tag.")
+        if not tag_new_owner:
+            raise ValueError("TAG_NEW_OWNER must be set when MODE=tag.")
 
     client = build_client()
 
@@ -713,7 +825,7 @@ def main() -> int:
 
         errors.extend(validation_errors)
 
-    else:
+    elif mode == "entry_map":
         entry_mapping = read_entry_mapping_csv(
             input_filename,
             header_entry_id=header_entry_id,
@@ -737,6 +849,64 @@ def main() -> int:
 
         errors.extend(validation_errors)
 
+    else:  # tag
+        if validate_new_users:
+            _print_progress(
+                "Validating TAG_NEW_OWNER user ID via user.get... (non-blocking)"
+            )
+            _, new_msgs = validate_user_ids(
+                client,
+                [tag_new_owner],
+                progress_every=validate_progress_every,
+                label="NEW",
+            )
+            validation_errors.extend(new_msgs)
+
+        _print_progress("User validation phase complete.\n")
+
+        errors.extend(validation_errors)
+
+    # -------------------------------------------------------------------------
+    # Pre-listing: gather entry counts before asking for confirmation.
+    # owner_map and tag require an API listing pass; entry_map uses the CSV.
+    # -------------------------------------------------------------------------
+    if mode == "owner_map":
+        _print_progress("Listing entries for all mappings...\n")
+        entries_by_mapping: Dict[MappingRow, List[KalturaBaseEntry]] = {}
+        for m in effective_mapping:
+            entries_by_mapping[m] = list(
+                iter_entries_by_owner(client, m.old_user, page_size)
+            )
+        total_found = sum(len(v) for v in entries_by_mapping.values())
+        all_entries = [e for v in entries_by_mapping.values() for e in v]
+        confirm_header = (
+            f"{total_found} entr(y/ies) found across "
+            f"{len(effective_mapping)} mapping(s)."
+        )
+        confirm_breakdown = _status_breakdown(all_entries)
+    elif mode == "entry_map":
+        total_found = len(entry_mapping)
+        confirm_header = f"{total_found} entr(y/ies) in input CSV."
+        confirm_breakdown = ""
+    else:  # tag
+        tag_entries = list(iter_entries_by_tag(client, tag, page_size, tag_status_in))
+        total_found = len(tag_entries)
+        confirm_header = f"{total_found} entr(y/ies) found with tag {tag!r}."
+        confirm_breakdown = _status_breakdown(tag_entries)
+
+    # -------------------------------------------------------------------------
+    # Confirmation prompt
+    # -------------------------------------------------------------------------
+    action_label = "dry run" if dry_run else "ownership reassignment"
+    print(f"\n{confirm_header}", flush=True)
+    if confirm_breakdown:
+        print(confirm_breakdown, flush=True)
+    answer = input(f"\nProceed with {action_label}? [yes/no]: ").strip().lower()
+    if answer != "yes":
+        print("Aborted.", flush=True)
+        return 0
+    print("", flush=True)
+
     summary_lines: List[str] = []
     summary_lines.append(f"Timestamp: {ts} ({timezone_name})")
     summary_lines.append(f"Input CSV: {input_filename}")
@@ -755,29 +925,26 @@ def main() -> int:
             for m in effective_mapping:
                 old_user = m.old_user
                 new_user = m.new_user
+                entries = entries_by_mapping[m]
 
-                _print_progress(f"Processing mapping: {old_user} -> {new_user}")
-
-                entries = list(iter_entries_by_owner(client, old_user, page_size))
                 summary_lines.append(
                     f"{old_user} -> {new_user}: {len(entries)} entr(y/ies)"
                 )
 
-                _print_progress(
-                    f"Found {len(entries)} entr(y/ies) owned by {old_user}."
-                )
-
                 if not entries:
-                    _print_progress(f"Done with mapping: {old_user} -> {new_user}\n")
+                    _print_progress(
+                        f"Mapping {old_user} -> {new_user}: 0 entries, skipping."
+                    )
                     continue
 
                 if dry_run:
                     _print_progress(
-                        f"DRY_RUN: would update {len(entries)} entr(y/ies) from {old_user} to {new_user}."
+                        f"DRY_RUN: {old_user} -> {new_user}: "
+                        f"would update {len(entries)} entr(y/ies)."
                     )
                 else:
                     _print_progress(
-                        f"Updating {len(entries)} entr(y/ies) from {old_user} to {new_user}..."
+                        f"Updating {len(entries)} entr(y/ies): {old_user} -> {new_user}..."
                     )
 
                 futures = []
@@ -835,7 +1002,7 @@ def main() -> int:
 
                 _print_progress(f"Done with mapping: {old_user} -> {new_user}\n")
 
-        else:
+        elif mode == "entry_map":
             summary_lines.append(f"Entry mapping rows: {len(entry_mapping)}")
 
             if dry_run:
@@ -937,6 +1104,81 @@ def main() -> int:
                             msg = (
                                 f"ENTRY {res.entry_id} ({res.entry_name!r}): "
                                 f"{res.owner_old} -> {res.owner_new} FAILED: {res.error}"
+                            )
+                            errors.append(msg)
+
+        else:  # tag
+            entries = tag_entries  # pre-listed before confirmation
+            summary_lines.append(f"Tag: {tag!r} -> new owner: {tag_new_owner!r}")
+            summary_lines.append(f"Entries found with tag: {len(entries)}")
+
+            if not entries:
+                _print_progress("No entries found. Nothing to update.")
+            else:
+                if dry_run:
+                    _print_progress(
+                        f"DRY_RUN: would update {len(entries)} entr(y/ies) "
+                        f"to owner {tag_new_owner!r}."
+                    )
+                else:
+                    _print_progress(
+                        f"Updating {len(entries)} entr(y/ies) "
+                        f"to owner {tag_new_owner!r}..."
+                    )
+
+                futures = []
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    for e in entries:
+                        entry_id = getattr(e, "id", "")
+                        entry_name = getattr(e, "name", "")
+                        owner_old = getattr(e, "userId", "")
+                        if not entry_id:
+                            continue
+
+                        futures.append(
+                            executor.submit(
+                                update_owner_with_retry,
+                                client,
+                                entry_id,
+                                entry_name,
+                                owner_old,
+                                tag_new_owner,
+                                dry_run,
+                                max_retries,
+                                backoff_base_sec,
+                                request_delay_sec,
+                            )
+                        )
+
+                    completed = 0
+                    total = len(futures)
+                    for fut in as_completed(futures):
+                        res = fut.result()
+                        completed += 1
+                        if total >= 25 and (
+                            completed % 25 == 0 or completed == total
+                        ):
+                            _print_progress(
+                                f"  Progress: {completed}/{total} processed"
+                            )
+                        results.append(res)
+
+                        writer.writerow(
+                            [
+                                res.entry_id,
+                                res.entry_name,
+                                res.owner_old,
+                                res.owner_new,
+                                "success" if res.success else "fail",
+                                "" if res.success else (res.error or ""),
+                            ]
+                        )
+
+                        if not res.success:
+                            msg = (
+                                f"ENTRY {res.entry_id} ({res.entry_name!r}): "
+                                f"{res.owner_old} -> {res.owner_new} "
+                                f"FAILED: {res.error}"
                             )
                             errors.append(msg)
 

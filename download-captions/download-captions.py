@@ -40,7 +40,7 @@ PARTNER_ID = os.getenv("PARTNER_ID", "").strip()
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
 SERVICE_URL = os.getenv("KALTURA_SERVICE_URL", "https://www.kaltura.com/").strip()
 
-DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER", "captions_download").strip()
+DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER", "output").strip()
 CONVERT_TO_TXT = _env_bool("CONVERT_TO_TXT", "false")
 INCLUDE_CHILD_CATEGORIES = _env_bool("INCLUDE_CHILD_CATEGORIES", "true")
 DEBUG = _env_bool("DEBUG", "false")
@@ -346,17 +346,19 @@ def download_captions(client: KalturaClient, captions, entry, counter):
                 with urllib.request.urlopen(url) as resp, open(out_path, "wb") as fh:
                     fh.write(resp.read())
 
-                # Always show the download line once (numbered)
-                print(f"{counter[0]}. Downloaded:\t\t{out_path}")
+                # Always show the download line once (numbered). Pad the
+                # counter to 4 digits so output stays vertically aligned up to
+                # 9,999 downloaded caption assets.
+                print(f"{counter[0]:>4}. Downloaded:\t{out_path}")
 
                 if CONVERT_TO_TXT:
                     txt_path = convert_caption_to_txt(out_path, ext)
                     if txt_path:
-                        print(f"   Converted to TXT:\t{txt_path}")
+                        print(f"      Converted to TXT:\t{txt_path}")
                         # convert_caption_to_txt deletes the source when CONVERT_TO_TXT=True
-                        print(f"   Deleted:\t\t{out_path}")
+                        print(f"      Deleted:\t{out_path}")
                     else:
-                        print(f"   Warning:\t\tconversion failed for {out_path}")
+                        print(f"      Warning:\tconversion failed for {out_path}")
 
                 # Increment the main counter only once per caption asset
                 counter[0] += 1
