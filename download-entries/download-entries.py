@@ -363,7 +363,7 @@ def main():
 
     os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
-    csv_path = os.path.join(DOWNLOAD_FOLDER, f"download_report_{timestamp}.csv")
+    csv_path = os.path.join(DOWNLOAD_FOLDER, f"{timestamp}_download_report.csv")
 
     caffeinate = None
     if sys.platform == "darwin":
