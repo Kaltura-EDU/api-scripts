@@ -1,5 +1,10 @@
 # Changelog – download-entries.py
 
+## [v1.6.0] – 2026-05-01
+### Added
+- Duplicate filename handling: if two entries produce the same filename (e.g., multiple "Person's Zoom Meeting" recordings), the entry ID is appended to the second file's name to keep both and prevent silent overwrites.
+- CSV download report: after each run, a timestamped CSV is saved to the download folder (`download_report_YYYY-MM-DD-HHMM.csv`) listing every entry processed with metadata fields matching a KMC-style export: entry ID, name, description, owner, creator ID, creation date, last updated, duration, media type, tags, categories, download status, and the actual filename written to disk. The report is flushed after each entry so partial results are preserved if the run is interrupted.
+
 ## [v1.5.0] – 2026-04-30
 ### Added
 - macOS sleep prevention: the script now launches `caffeinate -i` at the start of a download run and terminates it when the run completes, preventing the computer from sleeping mid-download.

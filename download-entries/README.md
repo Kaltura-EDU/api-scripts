@@ -14,9 +14,11 @@ The script downloads entries sequentially (not threaded) for simplicity and reli
 ## Features
 - Filters out non-media entries (e.g., playlists) automatically
 - Optionally removes `(Source)` and trailing underscores/dashes from filenames via a `REMOVE_SUFFIX` global variable (default: `True`)
+- Handles duplicate filenames: if multiple entries share the same name (e.g., several "Person's Zoom Meeting" recordings), the entry ID is appended to keep filenames unique and prevent silent overwrites
 - Handles child entries (e.g., clips or derivatives)
 - Supports category hierarchy — if you provide a category ID, the script will also include entries from any subcategories
 - Skips files that already exist in the download folder, so interrupted runs can be safely resumed
+- Generates a timestamped CSV report (`download_report_YYYY-MM-DD-HHMM.csv`) in the download folder after each run, with KMC-style metadata columns: entry ID, name, description, owner, creator ID, creation date, last updated, duration, media type, tags, categories, download status, and the actual filename written to disk
 - Admin secret input is masked (not displayed) when entered at the prompt
 - Automatically prevents macOS from sleeping during a download run (uses `caffeinate`)
 
@@ -66,4 +68,4 @@ Andy Clark
 Systems Administrator, Learning Systems  
 Baylor University  
 
-*Last updated 2026-04-30*
+*Last updated 2026-05-01*
