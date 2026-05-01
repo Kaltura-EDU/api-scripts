@@ -5,7 +5,13 @@ comma-delimited list of entry IDs, or owner's user ID.
 
 Entries that are not valid downloadable media (e.g., playlists)
 are automatically skipped. Filenames are optionally cleaned to remove
-"(Source)" and trailing underscores or dashes.
+"(Source)" and trailing underscores or dashes. If multiple entries share the
+same filename, the entry ID is appended to keep filenames unique.
+
+After each run, a timestamped CSV report is saved to the download folder
+listing every entry processed, with metadata fields including entry ID, name,
+owner, creation date, duration, tags, categories, download status, and the
+actual filename written to disk.
 
 You can change the name of the download folder and filename cleaning behavior
 using the global variables defined at the top of the script.
@@ -14,6 +20,8 @@ Be sure to provide your partner ID and admin secret in the global variables
 before running the script.
 '''
 
+import csv
+import datetime
 import getpass
 import os
 import subprocess
@@ -36,6 +44,51 @@ DOWNLOAD_FOLDER = "kaltura_downloads"
 RETRY_ATTEMPTS = 3
 REMOVE_SUFFIX = True
 # -- END CONFIGURABLE VARIABLES --
+
+CSV_HEADERS = [
+    "Entry ID", "Name", "Description", "Owner", "Creator ID",
+    "Created At", "Updated At", "Duration", "Media Type",
+    "Tags", "Categories", "Download Status", "Downloaded Filename",
+]
+
+MEDIA_TYPE_MAP = {1: "Video", 2: "Image", 5: "Audio"}
+
+
+def _fmt_ts(ts):
+    if not ts:
+        return ""
+    return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _fmt_duration(seconds):
+    if seconds is None:
+        return ""
+    h, rem = divmod(int(seconds), 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def _media_type_label(entry):
+    val = getattr(entry.mediaType, "value", getattr(entry, "mediaType", None))
+    return MEDIA_TYPE_MAP.get(val, str(val) if val is not None else "")
+
+
+def write_csv_row(writer, entry, status, filename=""):
+    writer.writerow([
+        entry.id,
+        getattr(entry, "name", "") or "",
+        getattr(entry, "description", "") or "",
+        getattr(entry, "userId", "") or "",
+        getattr(entry, "creatorId", "") or "",
+        _fmt_ts(getattr(entry, "createdAt", None)),
+        _fmt_ts(getattr(entry, "updatedAt", None)),
+        _fmt_duration(getattr(entry, "duration", None)),
+        _media_type_label(entry),
+        getattr(entry, "tags", "") or "",
+        getattr(entry, "categories", "") or "",
+        status,
+        filename or "",
+    ])
 
 
 def get_kaltura_client(partner_id, admin_secret):
@@ -147,9 +200,10 @@ def get_download_url(client, entry):
     return get_flavor_download_url(client, entry)
 
 
-def get_file_name(url):
+def get_file_name(url, entry_id):
     """Extract the filename from the URL or HTTP response headers.
-    Returns None if the file already exists in the download folder."""
+    Returns None if the file already exists in the download folder.
+    Uses entry_id to disambiguate entries that share the same name."""
     filename = None
 
     try:
@@ -171,7 +225,12 @@ def get_file_name(url):
         filename = f"{base}{ext}"
 
     if os.path.exists(os.path.join(DOWNLOAD_FOLDER, filename)):
-        return None  # Already downloaded
+        # Collision: try an entry-ID-qualified name to distinguish same-titled entries
+        base, ext = os.path.splitext(filename)
+        filename_with_id = f"{base}_{entry_id}{ext}"
+        if os.path.exists(os.path.join(DOWNLOAD_FOLDER, filename_with_id)):
+            return None  # Already downloaded (entry-ID version exists)
+        return filename_with_id
 
     return filename
 
@@ -196,7 +255,7 @@ def worker(queue, client):
         entry = queue.pop(0)
         url = get_download_url(client, entry)
         if url:
-            filename = get_file_name(url)
+            filename = get_file_name(url, entry.id)
             download_file(url, filename)
         else:
             print(
@@ -208,7 +267,7 @@ def worker(queue, client):
         for child in children:
             child_url = get_download_url(client, child)
             if child_url:
-                child_filename = get_file_name(child_url)
+                child_filename = get_file_name(child_url, child.id)
                 download_file(child_url, child_filename)
             else:
                 print(
@@ -219,42 +278,48 @@ def worker(queue, client):
         time.sleep(1)  # Prevent overwhelming the server
 
 
-def process_entry(client, entry, index):
+def process_entry(client, entry, index, csv_writer):
     url = get_download_url(client, entry)
     if url:
-        filename = get_file_name(url)
+        filename = get_file_name(url, entry.id)
         if filename is None:
             print(
                 f"{index}. ⏭️ Skipping {entry.id} ({entry.name}): "
                 f"already downloaded."
                 )
+            write_csv_row(csv_writer, entry, "Already Downloaded")
         else:
             download_file(url, filename)
             print(f"{index}. ✅ Downloaded: {filename}")
+            write_csv_row(csv_writer, entry, "Downloaded", filename)
     else:
         print(
             f"{index}. ⚠️ Skipping {entry.id} ({entry.name}): No valid "
             f"download URL found."
             )
+        write_csv_row(csv_writer, entry, "Skipped (no URL)")
 
     children = get_child_entries(client, entry.id)
     for child in children:
         child_url = get_download_url(client, child)
         if child_url:
-            child_filename = get_file_name(child_url)
+            child_filename = get_file_name(child_url, child.id)
             if child_filename is None:
                 print(
                     f"{index}. ⏭️ Skipping child {child.id} "
                     f"({child.name}): already downloaded."
                     )
+                write_csv_row(csv_writer, child, "Already Downloaded")
             else:
                 download_file(child_url, child_filename)
                 print(f"{index}. ✅ Downloaded child: {child_filename}")
+                write_csv_row(csv_writer, child, "Downloaded", child_filename)
         else:
             print(
                 f"{index}. ⚠️ Skipping child entry {child.id} ({child.name}): "
                 f"No valid download URL found."
                 )
+            write_csv_row(csv_writer, child, "Skipped (no URL)")
 
 
 def main():
@@ -296,6 +361,10 @@ def main():
 
     print(f"Found {len(entries)} entries. Starting downloads...")
 
+    os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
+    csv_path = os.path.join(DOWNLOAD_FOLDER, f"download_report_{timestamp}.csv")
+
     caffeinate = None
     if sys.platform == "darwin":
         try:
@@ -305,14 +374,17 @@ def main():
             pass
 
     try:
-        # Process one entry at a time (no threading)
-        for idx, entry in enumerate(entries, start=1):
-            process_entry(client, entry, idx)
+        with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(CSV_HEADERS)
+            for idx, entry in enumerate(entries, start=1):
+                process_entry(client, entry, idx, writer)
+                csv_file.flush()
     finally:
         if caffeinate:
             caffeinate.terminate()
 
-    print("✅ All downloads complete!")
+    print(f"✅ All downloads complete! Report saved to: {csv_path}")
 
 
 if __name__ == "__main__":
