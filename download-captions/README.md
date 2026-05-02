@@ -1,5 +1,5 @@
 # Description
-This script allows you to download all caption assets from one or more Kaltura media entries. Optionally you can elect to convert them to TXT files and delete  the original caption files, leaving you only with TXT files. It supports downloading captions in their original formats, such as SRT, VTT, and others. You can select the entries using a tag, a category ID, or a comma-delimited list of entry IDs. The script also handles multi-stream entries and can be configured to skip child entries if desired. Filenames by default include creation date, entry ID, entry title, and caption label, but you can optionally shorten filenames by excluding the caption label. E.g.
+This script allows you to download all caption assets from one or more Kaltura media entries. You can download captions in their original formats (SRT, VTT, etc.), convert them to plain TXT transcripts, or save both formats at once. You can select the entries using a tag, a category ID, or a comma-delimited list of entry IDs. The script also handles multi-stream entries and can be configured to skip child entries if desired. Filenames by default include creation date, entry ID, entry title, and caption label, but you can optionally shorten filenames by excluding the caption label. E.g.
 ```
 2024-05-22_1_xuw9zvsc_XSE1_5B_Axial_Compression__English.srt
 2024-05-22_1_xuw9zvsc_XSE1_5B_Axial_Compression__Spanish.srt
@@ -20,7 +20,7 @@ The script requires a `.env` file to be created in the same folder with the foll
 - `KALTURA_SERVICE_URL` : The Kaltura service URL (default: https://www.kaltura.com).
 - `USER` : The Kaltura user ID to act as (default: admin user).
 - `DOWNLOAD_FOLDER` : Folder where captions will be saved (default: current folder).
-- `CONVERT_TO_TXT` : Set to `true` to convert captions to TXT files and delete originals (default: false).
+- `OUTPUT_FORMAT` : Controls what gets saved. Options: `srt` (default — keeps original caption file only), `txt` (converts to plain text and deletes original), or `both` (keeps original caption file and saves a TXT transcript). Replaces the legacy `CONVERT_TO_TXT` variable; existing `.env` files using `CONVERT_TO_TXT=true` will continue to work.
 - `INCLUDE_CHILD_CATEGORIES` : Set to `true` to include entries from child categories when using category ID (default: false).
 - `INCLUDE_CAPTION_LABEL_IN_FILENAMES` : Set to `false` to exclude caption labels from filenames for shorter names (default: true).
 - `SKIP_CHILD_ENTRIES` : Set to `true` to skip child entries in multi-stream entries (default: false).
@@ -56,4 +56,4 @@ Andy Clark
 Systems Administrator, Learning Systems  
 Baylor University  
 
-*Last updated 2025-09-03*
+*Last updated 2026-05-02*

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.0] - 2026-05-02
+### Changed
+- Replaced the `CONVERT_TO_TXT` boolean with a new `OUTPUT_FORMAT` variable that accepts three values: `srt` (default — saves original caption file only), `txt` (converts to plain text and deletes the original), or `both` (saves the original caption file and a TXT transcript).
+- Deletion of the source caption file is now handled in `download_captions` rather than inside `convert_caption_to_txt`, making the conversion function side-effect-free.
+- Updated debug output to display `OUTPUT_FORMAT` instead of `CONVERT_TO_TXT`.
+
+### Backward Compatibility
+- Existing `.env` files using `CONVERT_TO_TXT=true` will continue to work; the script maps `CONVERT_TO_TXT=true` → `OUTPUT_FORMAT=txt` and `CONVERT_TO_TXT=false` → `OUTPUT_FORMAT=srt` automatically when `OUTPUT_FORMAT` is not set.
+
 ## [1.3.0] - 2025-09-03
 ### Changed
 - Switched all configuration to use `.env` including: `CATEGORY_IDS`, `TAGS`, `ENTRY_IDS`, `OWNER`, `INCLUDE_CHILD_CATEGORIES`, `CONVERT_TO_TXT`, `INCLUDE_CAPTION_LABEL_IN_FILENAMES`, and `USER`.

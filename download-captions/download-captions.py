@@ -2,6 +2,7 @@
 download-captions.py
 Downloads caption files for Kaltura entries and (optionally) writes TXT transcripts.
 
+Output format is controlled by OUTPUT_FORMAT in .env: 'srt' (default), 'txt', or 'both'.
 Configuration is managed through a .env file (see README for details).
 """
 
@@ -41,7 +42,15 @@ ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
 SERVICE_URL = os.getenv("KALTURA_SERVICE_URL", "https://www.kaltura.com/").strip()
 
 DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER", "output").strip()
-CONVERT_TO_TXT = _env_bool("CONVERT_TO_TXT", "false")
+
+# OUTPUT_FORMAT controls what gets saved: 'srt' (default), 'txt', or 'both'.
+# Falls back to legacy CONVERT_TO_TXT if OUTPUT_FORMAT is not set.
+_output_format_raw = os.getenv("OUTPUT_FORMAT", "").strip().lower()
+if not _output_format_raw:
+    _output_format_raw = "txt" if _env_bool("CONVERT_TO_TXT", "false") else "srt"
+OUTPUT_FORMAT = _output_format_raw
+SAVE_SRT = OUTPUT_FORMAT in ("srt", "both")
+SAVE_TXT = OUTPUT_FORMAT in ("txt", "both")
 INCLUDE_CHILD_CATEGORIES = _env_bool("INCLUDE_CHILD_CATEGORIES", "true")
 DEBUG = _env_bool("DEBUG", "false")
 
@@ -293,12 +302,6 @@ def convert_caption_to_txt(caption_path: str, caption_ext: str) -> str:
                         # SRT cue index
                         continue
                     out.write(s + "\n")
-        # If we were only asked for TXT output, remove the source caption file
-        if CONVERT_TO_TXT and os.path.exists(caption_path):
-            try:
-                os.remove(caption_path)
-            except Exception as rm_err:
-                print(f"Warning: could not delete temporary caption file {caption_path}: {rm_err}")
         return txt_path
     except Exception as e:
         print(f"Error converting {caption_path} to TXT: {e}")
@@ -351,14 +354,25 @@ def download_captions(client: KalturaClient, captions, entry, counter):
                 # 9,999 downloaded caption assets.
                 print(f"{counter[0]:>4}. Downloaded:\t{out_path}")
 
-                if CONVERT_TO_TXT:
+                if SAVE_TXT:
                     txt_path = convert_caption_to_txt(out_path, ext)
                     if txt_path:
+<<<<<<< HEAD
                         print(f"      Converted to TXT:\t{txt_path}")
                         # convert_caption_to_txt deletes the source when CONVERT_TO_TXT=True
                         print(f"      Deleted:\t{out_path}")
+=======
+                        print(f"   Converted to TXT:\t{txt_path}")
+>>>>>>> 849dffc (Add OUTPUT_FORMAT env var to support downloading both SRT and TXT)
                     else:
                         print(f"      Warning:\tconversion failed for {out_path}")
+
+                if not SAVE_SRT and os.path.exists(out_path):
+                    try:
+                        os.remove(out_path)
+                        print(f"   Deleted:\t\t{out_path}")
+                    except Exception as rm_err:
+                        print(f"Warning: could not delete {out_path}: {rm_err}")
 
                 # Increment the main counter only once per caption asset
                 counter[0] += 1
@@ -377,7 +391,7 @@ def main():
         print("[DEBUG] ADMIN_SECRET set:", bool(ADMIN_SECRET))
         print("[DEBUG] KALTURA_SERVICE_URL:", SERVICE_URL)
         print("[DEBUG] DOWNLOAD_FOLDER:", DOWNLOAD_FOLDER)
-        print("[DEBUG] CONVERT_TO_TXT:", CONVERT_TO_TXT)
+        print("[DEBUG] OUTPUT_FORMAT:", OUTPUT_FORMAT)
         print("[DEBUG] INCLUDE_CHILD_CATEGORIES:", INCLUDE_CHILD_CATEGORIES)
         print("[DEBUG] ENTRY_IDS:", ENTRY_IDS)
         print("[DEBUG] CATEGORY_IDS:", CATEGORY_IDS)
