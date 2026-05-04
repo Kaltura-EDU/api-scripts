@@ -358,8 +358,6 @@ def download_captions(client: KalturaClient, captions, entry, counter):
                     txt_path = convert_caption_to_txt(out_path, ext)
                     if txt_path:
                         print(f"      Converted to TXT:\t{txt_path}")
-                        # convert_caption_to_txt deletes the source when CONVERT_TO_TXT=True
-                        print(f"      Deleted:\t{out_path}")
                     else:
                         print(f"      Warning:\tconversion failed for {out_path}")
 
