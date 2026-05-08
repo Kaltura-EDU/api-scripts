@@ -94,6 +94,7 @@ A timestamped report CSV is written to `output/`:
 
 | Column | Description |
 |---|---|
+| `timestamp` | When the action completed (local time, to the second) |
 | `username` | The user that was processed |
 | `category_id` | The target category |
 | `action` | The action from the input file |
@@ -110,5 +111,9 @@ A timestamped report CSV is written to `output/`:
 | `SERVICE_URL` | `https://www.kaltura.com` | Kaltura API endpoint |
 | `SESSION_EXPIRY` | `86400` | Session TTL in seconds |
 | `INPUT_CSV_FILENAME` | — | Path to input CSV |
-| `THREAD_COUNT` | `10` | Parallel API requests (5–15 recommended) |
+| `THREAD_COUNT` | `10` | Parallel API requests — applies to both cache building and row processing (5–15 recommended) |
 | `MAX_RETRIES` | `4` | Total attempts per operation (1 = no retry) |
+
+## Performance note
+
+Before processing begins, the script fetches the full member list for every unique category in your input via `categoryUser.list` and builds an in-memory cache. This eliminates per-user API calls during processing, which is significantly faster when many rows share the same category. Cache building is also parallelized using `THREAD_COUNT` threads. Progress is reported throughout so you can track both phases.

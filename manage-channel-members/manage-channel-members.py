@@ -48,7 +48,9 @@ from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
     KalturaCategory,
     KalturaCategoryUser,
+    KalturaCategoryUserFilter,
     KalturaCategoryUserPermissionLevel,
+    KalturaFilterPager,
     KalturaSessionType,
 )
 
@@ -72,7 +74,9 @@ OUTPUT_CSV = os.path.join(
     REPORTS_DIR, f"{RUN_TIMESTAMP}_manage-members-report.csv"
 )
 
-OUTPUT_FIELDS = ["username", "category_id", "action", "role", "result"]
+OUTPUT_FIELDS = [
+    "timestamp", "username", "category_id", "action", "role", "result",
+]
 
 VALID_ACTIONS = {"add", "remove", "verify", "change_role"}
 VALID_ROLES = {"member", "manager", "contributor", "moderator", "owner"}
@@ -85,8 +89,6 @@ ROLE_TO_PERM = {
     "member": KalturaCategoryUserPermissionLevel.MEMBER,
 }
 
-# Permission level integers returned by the API -> role name
-PERM_TO_ROLE = {0: "manager", 1: "moderator", 2: "contributor", 3: "member"}
 
 if not PARTNER_ID or not ADMIN_SECRET:
     print(
@@ -104,6 +106,17 @@ _print_lock = threading.Lock()
 def log(msg: str):
     with _print_lock:
         print(msg)
+
+
+def _fmt_duration(seconds: float) -> str:
+    seconds = int(seconds)
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h {m}m {s}s"
+    if m:
+        return f"{m}m {s}s"
+    return f"{s}s"
 
 
 # ---------------------------------------------------------------------------
@@ -177,19 +190,125 @@ def _is_not_found(exc: Exception) -> bool:
     ))
 
 
-def get_member_role(client, category_id: str, username: str):
+def perm_to_role(perm) -> str:
     """
-    Return the user's current role string in the category
-    ('owner', 'manager', 'moderator', 'contributor', 'member'),
-    or None if the user is not in the category at all.
-    Raises on unexpected API errors.
+    Convert a permissionLevel value returned by the API to a role string.
+    Uses getValue() because the SDK returns enum objects, not plain ints.
     """
+    _map = {0: "manager", 1: "moderator", 2: "contributor", 3: "member"}
+    try:
+        val = perm.getValue()
+    except AttributeError:
+        val = int(perm)
+    return _map.get(val, f"unknown({val})")
+
+
+def build_category_cache(category_ids) -> dict:
+    """
+    Fetch every member of each category in one paginated pass and store
+    them in a dict for O(1) lookup during processing.
+
+    Returns {category_id_str: {username: role_str}}.
+    The channel owner is included with role 'owner'.
+    If a category can't be fetched, its key is omitted and per-user
+    API calls are used as a fallback.
+    """
+    cache = {}
+    ids = sorted(set(str(cid) for cid in category_ids))
+    total = len(ids)
+    print(
+        f"  Building member cache for {total:,} category/ies "
+        f"({THREAD_COUNT} thread(s))..."
+    )
+    cache_start = time.time()
+    done_count = 0
+
+    def _fetch_one(cid):
+        members = {}
+        cat = get_client().category.get(int(cid))
+        if cat.owner:
+            members[cat.owner] = "owner"
+        filt = KalturaCategoryUserFilter()
+        filt.categoryIdEqual = int(cid)
+        pager = KalturaFilterPager()
+        pager.pageSize = 500
+        pager.pageIndex = 1
+        while True:
+            resp = get_client().categoryUser.list(filt, pager)
+            for cu in resp.objects:
+                members[cu.userId] = perm_to_role(cu.permissionLevel)
+            if len(resp.objects) < pager.pageSize:
+                break
+            pager.pageIndex += 1
+        return cid, members
+
+    with ThreadPoolExecutor(max_workers=THREAD_COUNT) as pool:
+        futures = {pool.submit(_fetch_one, cid): cid for cid in ids}
+        for future in as_completed(futures):
+            done_count += 1
+            try:
+                cid, members = future.result()
+                cache[cid] = members
+                log(
+                    f"  [{done_count:,}/{total:,}] "
+                    f"Category {cid}: {len(members):,} member(s)"
+                )
+            except Exception as exc:
+                cid = futures[future]
+                log(
+                    f"  [{done_count:,}/{total:,}] "
+                    f"WARNING: could not cache category {cid}: {exc}"
+                    " — will fall back to per-user API calls"
+                )
+
+            if done_count % 25 == 0 or done_count == total:
+                elapsed = time.time() - cache_start
+                rate = done_count / elapsed if elapsed > 0 else 0
+                remaining = (
+                    (total - done_count) / rate if rate > 0 else 0
+                )
+                pct = done_count / total * 100
+                cached_members = sum(len(v) for v in cache.values())
+                rem_str = (
+                    f" — est. remaining {_fmt_duration(remaining)}"
+                    if done_count < total else ""
+                )
+                with _print_lock:
+                    print(
+                        f"  Cache: {done_count:,}/{total:,} "
+                        f"({pct:.0f}%) — "
+                        f"{cached_members:,} members"
+                        f" — elapsed {_fmt_duration(elapsed)}"
+                        f"{rem_str}"
+                    )
+
+    print(
+        f"  Cache complete: "
+        f"{sum(len(v) for v in cache.values()):,} member record(s) "
+        f"across {len(cache):,} category/ies."
+    )
+    return cache
+
+
+def lookup_role(
+    cache: dict, category_id: str, username: str, client=None
+):
+    """
+    Return the user's role string from the cache, or None if not a
+    member. Falls back to a live categoryUser.get if the category
+    was not cached.
+    """
+    if category_id in cache:
+        return cache[category_id].get(username)
+    # Cache miss — fall back to live lookup
+    if client is None:
+        return None
     cat = client.category.get(int(category_id))
     if cat.owner == username:
         return "owner"
     try:
         cu = client.categoryUser.get(int(category_id), username)
-        return PERM_TO_ROLE.get(int(cu.permissionLevel), "unknown")
+        return perm_to_role(cu.permissionLevel)
     except Exception as exc:
         if _is_not_found(exc):
             return None
@@ -201,7 +320,9 @@ def get_member_role(client, category_id: str, username: str):
 # ---------------------------------------------------------------------------
 
 def make_result(row: dict, result: str) -> dict:
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return {
+        "timestamp": ts,
         "username": row["username"].strip(),
         "category_id": row["category_id"].strip(),
         "action": row["action"].strip(),
@@ -214,7 +335,7 @@ def make_result(row: dict, result: str) -> dict:
 # Per-row processor
 # ---------------------------------------------------------------------------
 
-def process_row(row: dict) -> dict:
+def process_row(row: dict, cache: dict) -> dict:
     username = row["username"].strip()
     category_id = row["category_id"].strip()
     action = row["action"].strip().lower()
@@ -251,8 +372,7 @@ def process_row(row: dict) -> dict:
 
         # ----------------------------------------------------------------
         elif action == "remove":
-            cat = client.category.get(int(category_id))
-            if cat.owner == username:
+            if lookup_role(cache, category_id, username, client) == "owner":
                 result = (
                     "error: user is the channel owner and cannot be "
                     "removed without transferring ownership first"
@@ -275,7 +395,7 @@ def process_row(row: dict) -> dict:
 
         # ----------------------------------------------------------------
         elif action == "verify":
-            current_role = get_member_role(client, category_id, username)
+            current_role = lookup_role(cache, category_id, username, client)
             if current_role is None:
                 result = (
                     f"not in channel (expected {role})"
@@ -294,7 +414,7 @@ def process_row(row: dict) -> dict:
 
         # ----------------------------------------------------------------
         elif action == "change_role":
-            current_role = get_member_role(client, category_id, username)
+            current_role = lookup_role(cache, category_id, username, client)
             if current_role is None:
                 result = "not in channel — no change made"
             elif current_role == role:
@@ -400,23 +520,53 @@ def main():
                 sys.exit(1)
             rows.append(row)
 
-    print(f"  {len(rows)} row(s) to process.")
+    total = len(rows)
+    print(f"  {total:,} row(s) to process.")
+
+    unique_cats = {row["category_id"].strip() for row in rows}
+    cache = build_category_cache(unique_cats)
+
     print(f"Processing with {THREAD_COUNT} thread(s)...")
 
     results = []
+    done = 0
+    start_time = time.time()
+
     with ThreadPoolExecutor(max_workers=THREAD_COUNT) as pool:
         futures = {
-            pool.submit(process_row, row): row for row in rows
+            pool.submit(process_row, row, cache): row for row in rows
         }
         for future in as_completed(futures):
             results.append(future.result())
+            done += 1
+            if done % 25 == 0 or done == total:
+                elapsed = time.time() - start_time
+                rate = done / elapsed if elapsed > 0 else 0
+                remaining = (
+                    (total - done) / rate if rate > 0 else 0
+                )
+                pct = done / total * 100
+                with _print_lock:
+                    print(
+                        f"Progress: {done:,}/{total:,} "
+                        f"({pct:.0f}%) — "
+                        f"elapsed {_fmt_duration(elapsed)}"
+                        + (
+                            f" — est. remaining "
+                            f"{_fmt_duration(remaining)}"
+                            if done < total else ""
+                        )
+                    )
 
     with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=OUTPUT_FIELDS)
         writer.writeheader()
         writer.writerows(results)
 
-    print(f"\nDone. Report: {OUTPUT_CSV}")
+    elapsed = time.time() - start_time
+    print(
+        f"\nDone in {_fmt_duration(elapsed)}. Report: {OUTPUT_CSV}"
+    )
 
 
 if __name__ == "__main__":
