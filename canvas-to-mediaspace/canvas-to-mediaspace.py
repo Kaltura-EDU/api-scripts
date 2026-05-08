@@ -74,18 +74,18 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-PARTNER_ID = int(os.getenv("PARTNER_ID", "2323111"))
-ADMIN_SECRET = os.getenv("ADMIN_SECRET", "REDACTED")
-USER_ID = os.getenv("USER_ID", "api-gbdavis")
+PARTNER_ID = int(os.getenv("PARTNER_ID"))
+ADMIN_SECRET = os.getenv("ADMIN_SECRET"))
+USER_ID = os.getenv("USER_ID")
 SERVICE_URL = os.getenv("SERVICE_URL", "https://www.kaltura.com")
 
-PARENT_ID = int(os.getenv("PARENT_ID", "78494121"))
+PARENT_ID = int(os.getenv("PARENT_ID"))
 PRIVACY_CONTEXT = os.getenv("PRIVACY_CONTEXT", "MediaSpace")
 FULL_NAME_PREFIX = os.getenv(
     "FULL_NAME_PREFIX", "MediaSpace>site>channels>"
 )
 MEDIA_SPACE_BASE_URL = os.getenv(
-    "MEDIA_SPACE_BASE_URL", "https://mediaspace.ucsd.edu/channel/"
+    "MEDIA_SPACE_BASE_URL"
 )
 
 # Channel creation settings (matching existing channel defaults)
