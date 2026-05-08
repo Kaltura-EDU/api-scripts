@@ -99,8 +99,8 @@ Three CSVs are written to `output/` as courses complete (not at the end):
 | File | Contents |
 |---|---|
 | `<timestamp>_channel_mapping.csv` | One row per course: channel ID, URL, Canvas category info |
-| `<timestamp>_channel_members.csv` | One row per user: username, Canvas role, MediaSpace role |
-| `<timestamp>_published_entries.csv` | One row per entry: entry ID, name, creator, publish status |
+| `<timestamp>_channel_members.csv` | One row per user: username, Canvas role, MediaSpace role, `add_status` (`ok` or `error`) |
+| `<timestamp>_published_entries.csv` | One row per entry: entry ID, name, creator, `publish_status` (`ok`, `already_published`, or `error`) |
 
 ---
 

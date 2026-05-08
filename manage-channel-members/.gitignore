@@ -1,0 +1,15 @@
+# Credentials — never commit
+.env
+
+# Input/output may contain sensitive data
+input/
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# macOS
+.DS_Store

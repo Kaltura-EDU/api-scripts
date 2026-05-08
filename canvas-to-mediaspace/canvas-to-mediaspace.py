@@ -138,7 +138,7 @@ MAPPING_FIELDS = [
 ]
 MEMBERS_FIELDS = [
     "course_id", "canvas_course_id", "ms_channel_name",
-    "ms_channel_id", "username", "canvas_role", "ms_role",
+    "ms_channel_id", "username", "canvas_role", "ms_role", "add_status",
 ]
 ENTRIES_FIELDS = [
     "course_id", "canvas_course_id", "ms_channel_name",
@@ -490,8 +490,11 @@ def publish_entry(
     entry_id: str,
     category_id: int,
     course_id: str = "",
-) -> bool:
-    """Publish an entry to a channel category with retry."""
+) -> str:
+    """
+    Publish an entry to a channel category with retry.
+    Returns 'ok', 'already_published', or 'error'.
+    """
     ce = KalturaCategoryEntry()
     ce.categoryId = category_id
     ce.entryId = entry_id
@@ -501,10 +504,13 @@ def publish_entry(
             course_id=course_id,
             label=f"publish {entry_id}",
         )
-        return True
+        return "ok"
     except Exception as exc:
+        msg = str(exc).lower()
+        if "already assigned" in msg or "already_exists" in msg:
+            return "already_published"
         log(course_id, f"WARNING: could not publish {entry_id}: {exc}")
-        return False
+        return "error"
 
 
 # ---------------------------------------------------------------------------
@@ -604,6 +610,7 @@ def process_course(
             "username": owner_username,
             "canvas_role": "Teacher",
             "ms_role": "owner",
+            "add_status": "ok",
         }
     )
 
@@ -662,6 +669,7 @@ def process_course(
                     "username": user["username"],
                     "canvas_role": user["role"],
                     "ms_role": ms_role,
+                    "add_status": "ok" if ok else "error",
                 }
             )
 
@@ -683,13 +691,13 @@ def process_course(
             entry_details = get_entry_details(client, entry_ids)
 
             def _publish_one(entry_id):
-                ok = publish_entry(
+                status = publish_entry(
                     get_client(), entry_id,
                     new_channel.id, course_id
                 )
-                return entry_id, ok, entry_details.get(entry_id)
+                return entry_id, status, entry_details.get(entry_id)
 
-            n_published = n_pub_err = done_pub = 0
+            n_published = n_already = n_pub_err = done_pub = 0
             n_entries = len(entry_ids)
             with ThreadPoolExecutor(
                 max_workers=MEMBER_THREADS
@@ -699,10 +707,12 @@ def process_course(
                     for eid in entry_ids
                 }
                 for future in as_completed(pub_futures):
-                    entry_id, ok, entry = future.result()
+                    entry_id, status, entry = future.result()
                     done_pub += 1
-                    if ok:
+                    if status == "ok":
                         n_published += 1
+                    elif status == "already_published":
+                        n_already += 1
                     else:
                         n_pub_err += 1
                     if done_pub % 10 == 0:
@@ -730,18 +740,20 @@ def process_course(
                                 format_ts(entry.createdAt)
                                 if entry else ""
                             ),
-                            "publish_status": (
-                                "ok" if ok else "error"
-                            ),
+                            "publish_status": status,
                         }
                     )
 
+            already_note = (
+                f", {n_already} already published" if n_already else ""
+            )
             pub_err_note = (
                 f", {n_pub_err} error(s)" if n_pub_err else ""
             )
             log(
                 course_id,
-                f"Published {n_published} entry/ies{pub_err_note}"
+                f"Published {n_published} entry/ies"
+                f"{already_note}{pub_err_note}"
             )
         else:
             log(course_id, "No entries found in Canvas category")
