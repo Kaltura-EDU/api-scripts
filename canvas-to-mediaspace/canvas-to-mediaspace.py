@@ -74,19 +74,17 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-PARTNER_ID = int(os.getenv("PARTNER_ID"))
-ADMIN_SECRET = os.getenv("ADMIN_SECRET"))
-USER_ID = os.getenv("USER_ID")
+PARTNER_ID = int(os.getenv("PARTNER_ID", "0"))
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
+USER_ID = os.getenv("USER_ID", "")
 SERVICE_URL = os.getenv("SERVICE_URL", "https://www.kaltura.com")
 
-PARENT_ID = int(os.getenv("PARENT_ID"))
+PARENT_ID = int(os.getenv("PARENT_ID", "0"))
 PRIVACY_CONTEXT = os.getenv("PRIVACY_CONTEXT", "MediaSpace")
 FULL_NAME_PREFIX = os.getenv(
     "FULL_NAME_PREFIX", "MediaSpace>site>channels>"
 )
-MEDIA_SPACE_BASE_URL = os.getenv(
-    "MEDIA_SPACE_BASE_URL"
-)
+MEDIA_SPACE_BASE_URL = os.getenv("MEDIA_SPACE_BASE_URL", "")
 
 # Channel creation settings (matching existing channel defaults)
 # privacy/list=3 (members only), join=3 (invite only), inheritance=2
@@ -117,6 +115,18 @@ MEMBER_THREADS = int(os.getenv("MEMBER_THREADS", "10"))
 # Total retry attempts per API call (1 = no retry, 4 = 3 retries).
 # Retries use exponential backoff. Set to 1 to disable.
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "4"))
+
+_required = {
+    "PARTNER_ID": str(PARTNER_ID),
+    "ADMIN_SECRET": ADMIN_SECRET,
+    "PARENT_ID": str(PARENT_ID),
+    "MEDIA_SPACE_BASE_URL": MEDIA_SPACE_BASE_URL,
+}
+_missing = [k for k, v in _required.items() if not v or v == "0"]
+if _missing:
+    raise ValueError(
+        f"Missing required .env variable(s): {', '.join(_missing)}"
+    )
 
 PACIFIC = pytz.timezone("America/Los_Angeles")
 REPORTS_DIR = "output"
