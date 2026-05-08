@@ -1,0 +1,21 @@
+# Credentials — never commit
+.env
+
+# Input CSVs may contain student enrollment data (FERPA)
+input/
+
+# Output CSVs contain PII and are large; share separately if needed
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# macOS
+.DS_Store
+
+# Archives
+*.zip
