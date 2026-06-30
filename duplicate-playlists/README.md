@@ -25,7 +25,12 @@ pip install -r requirements.txt
 ```
 
 ## Running the Script
-Before running the script, make sure `SOURCE_CATEGORY_ID` and `DESTINATION_CATEGORY_ID` are set in your `.env` file.
+Before running the script, identify the source and destination channels in your `.env` file. For each, you can use either the category ID or the channel name — but not both. Set one of the following pairs:
+
+- `SOURCE_CATEGORY_ID` **or** `SOURCE_CATEGORY_NAME`
+- `DESTINATION_CATEGORY_ID` **or** `DESTINATION_CATEGORY_NAME`
+
+If both variables in a pair are set, the script will exit with an error. If a name is provided and multiple categories share that name, the script will list the matching IDs and ask you to use the ID variable instead.
 
 1. From the terminal, navigate to the script's folder, e.g.
 ```bash
@@ -52,4 +57,4 @@ Galen Davis
 Senior Education Technology Specialist   
 UC San Diego  
 Created: 7 July 2025  
-Last updated: 30 June 2026
+Last updated: 1 July 2026

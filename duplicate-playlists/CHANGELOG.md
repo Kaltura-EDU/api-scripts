@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0] – 2026-07-01
+### Changed
+- Source and destination channels can now be identified by either category ID or channel name. Set `SOURCE_CATEGORY_ID` or `SOURCE_CATEGORY_NAME` (and the equivalent `DESTINATION_*` pair) in `.env` — not both.
+- The script validates the ID/name inputs before prompting for the admin secret, so configuration errors are caught immediately.
+- If a name matches multiple categories, the script lists the conflicting IDs and instructs the user to use the ID variable instead.
+- Updated `.env.example` and README to document the new ID/name options.
+
 ## [1.1.0] – 2026-06-30
 ### Changed
 - Admin secret is now entered at runtime via a secure prompt (no echo) instead of being stored in `.env`.
