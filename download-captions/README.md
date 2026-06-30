@@ -14,11 +14,11 @@ The script requires a `.env` file to be created in the same folder with the foll
 
 **Required:**
 - `PARTNER_ID` : Your Kaltura partner ID.
-- `ADMIN_SECRET` : Your Kaltura admin secret key.
+- Admin secret: entered at runtime via a secure prompt (not stored in `.env`).
 
 **Optional:**
 - `KALTURA_SERVICE_URL` : The Kaltura service URL (default: https://www.kaltura.com).
-- `USER` : The Kaltura user ID to act as (default: admin user).
+- `KALTURA_USER` : The Kaltura user ID to act as (default: admin user).
 - `DOWNLOAD_FOLDER` : Folder where captions will be saved (default: current folder).
 - `OUTPUT_FORMAT` : Controls what gets saved. Options: `srt` (default — keeps original caption file only), `txt` (converts to plain text and deletes original), or `both` (keeps original caption file and saves a TXT transcript). Replaces the legacy `CONVERT_TO_TXT` variable; existing `.env` files using `CONVERT_TO_TXT=true` will continue to work.
 - `INCLUDE_CHILD_CATEGORIES` : Set to `true` to include entries from child categories when using category ID (default: false).
@@ -35,6 +35,7 @@ The script requires a `.env` file to be created in the same folder with the foll
 6. Activate your virtual environment (Windows: `venv\\Scripts\\activate` Mac: `source venv/bin/activate`)
 7. Install the needed modules: `pip install -r requirements.txt`
 8. Run the script: `python3 download-captions.py`
+9. When prompted, enter your Kaltura admin secret. The input will not be visible as you type.
 
 # Output
 As the script runs, it will display numbered messages for each caption file downloaded, converted, or deleted, helping you track progress when working with large batches. Messages will indicate the original format of captions downloaded, whether conversion to TXT was performed, and if original files were deleted. Progress numbering allows easy identification of captions processed.
@@ -56,4 +57,4 @@ Andy Clark
 Systems Administrator, Learning Systems  
 Baylor University  
 
-*Last updated 2026-05-02*
+*Last updated 2026-06-30*

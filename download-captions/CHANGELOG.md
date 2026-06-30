@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.0] - 2026-06-30
+### Changed
+- Admin secret is now entered at runtime via a secure prompt (no echo) instead of being stored in `.env`.
+- Added validation so that submitting an empty admin secret exits with a clear error message rather than a cryptic API failure.
+- Renamed `USER` to `KALTURA_USER` to avoid a silent collision with the system `USER` environment variable on macOS/Linux, which caused `.env` values for this variable to be ignored.
+- Removed `ADMIN_SECRET` from `.env.example`; added a comment noting it is entered at runtime.
+- Grouped `.env.example` variables into session variables, script variables, and query filters.
+- Fixed all PEP 8 E501 line-length violations so the script passes `flake8` without warnings.
+- Updated README to reflect the above changes.
+
 ## [1.4.0] - 2026-05-02
 ### Changed
 - Replaced the `CONVERT_TO_TXT` boolean with a new `OUTPUT_FORMAT` variable that accepts three values: `srt` (default — saves original caption file only), `txt` (converts to plain text and deletes the original), or `both` (saves the original caption file and a TXT transcript).
@@ -31,7 +41,7 @@
   - If an entry has a parent, only process the parent to avoid duplicates.
 - Optional filename simplification:
   - When `INCLUDE_CAPTION_LABEL_IN_FILENAMES=false`, caption filenames omit long labels like `English__auto-generated`.
-- Introduced a new `.env` variable `USER`—allows tagging API actions for tracking/audit logs (e.g., `api-gbdavis`).
+- Introduced a new `.env` variable `USER` (renamed to `KALTURA_USER` in 1.5.0)—allows tagging API actions for tracking/audit logs (e.g., `api-gbdavis`).
 
 ### Fixed
 - Resolved trailing double-enumeration issue during download-convert steps.
