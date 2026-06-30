@@ -1,5 +1,6 @@
 import os
 import csv
+import getpass
 import xml.etree.ElementTree as ET
 from urllib.parse import unquote
 from datetime import datetime
@@ -14,10 +15,12 @@ from KalturaClient.Plugins.Metadata import (
 load_dotenv()
 
 PARTNER_ID = os.getenv("PARTNER_ID")
-ADMIN_SECRET = os.getenv("ADMIN_SECRET")
+ADMIN_SECRET = getpass.getpass("Enter your Kaltura admin secret: ")
 USER_ID = os.getenv("USER_ID")
 PRIVILEGES = os.getenv("PRIVILEGES", "all:*,disableentitlement")
 METADATA_PROFILE_ID = os.getenv("METADATA_PROFILE_ID")
+SOURCE_CATEGORY_ID = os.getenv("SOURCE_CATEGORY_ID")
+DESTINATION_CATEGORY_ID = os.getenv("DESTINATION_CATEGORY_ID")
 
 # Set up Kaltura session
 config = KalturaConfiguration()
@@ -74,21 +77,30 @@ def update_metadata_xml(xml_string, new_ids):
     return ET.tostring(root, encoding="unicode")
 
 
-# Prompt for source category
-source_category_id = input(
-    "Enter the category ID for the original playlists: "
-    ).strip()
-source_category = client.category.get(int(source_category_id))
+# Load source and destination categories from env
+source_category = client.category.get(int(SOURCE_CATEGORY_ID))
 source_category_name = source_category.name
 
+destination_category = client.category.get(int(DESTINATION_CATEGORY_ID))
+destination_category_name = destination_category.name
+
 # Retrieve and extract playlist IDs
-source_metadata = get_category_metadata_xml(source_category_id)
+source_metadata = get_category_metadata_xml(SOURCE_CATEGORY_ID)
 if not source_metadata:
     print("No metadata found for source category.")
     exit()
 
 playlist_ids = extract_playlist_ids(source_metadata.xml)
-print(f"{len(playlist_ids)} playlists found.")
+
+# Confirm before proceeding
+confirmation = input(
+    f"{len(playlist_ids)} playlists found in {source_category_name} "
+    f"({SOURCE_CATEGORY_ID}). Duplicate them and assign to "
+    f"{destination_category_name} ({DESTINATION_CATEGORY_ID})? [y/N] "
+).strip().lower()
+if confirmation != "y":
+    print("Aborted.")
+    exit()
 
 # Clone playlists and get names
 cloned_pairs = []
@@ -98,15 +110,8 @@ for pid in playlist_ids:
     original = client.playlist.get(pid)
     cloned_pairs.append((original.name, pid, new_playlist.id))
 
-# Prompt for destination category
-destination_category_id = input(
-    "Enter the category ID for the new playlists: "
-    ).strip()
-destination_category = client.category.get(int(destination_category_id))
-destination_category_name = destination_category.name
-
 # Retrieve destination metadata object
-destination_metadata = get_category_metadata_xml(destination_category_id)
+destination_metadata = get_category_metadata_xml(DESTINATION_CATEGORY_ID)
 if not destination_metadata:
     print("No metadata found for destination category.")
     exit()
@@ -132,13 +137,13 @@ with open(csv_filename, "w", newline="") as csvfile:
     ])
     for name, old_id, new_id in cloned_pairs:
         writer.writerow([
-            name, source_category_id, source_category_name,
-            old_id, destination_category_id, destination_category_name,
+            name, SOURCE_CATEGORY_ID, source_category_name,
+            old_id, DESTINATION_CATEGORY_ID, destination_category_name,
             new_id
         ])
 
 print(
     f"{len(cloned_pairs)} playlists added to category "
-    f"{destination_category_name} ({destination_category_id})"
+    f"{destination_category_name} ({DESTINATION_CATEGORY_ID})"
     )
 print(f"Results saved to {csv_filename}.")
