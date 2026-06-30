@@ -14,7 +14,7 @@ This script creates a new MediaSpace channel (Kaltura Category) using the Kaltur
     ```bash
     cp .env.example .env
     ```
-    Edit `.env` and fill in your API credentials and channel preferences.
+    Edit `.env` and fill in your API credentials and channel settings. Note that `CHANNEL_NAME` and `MEDIA_SPACE_URL` are required — the script will exit with an error if either is missing.
 
 ## Configuration Reference
 
@@ -49,3 +49,5 @@ Run the script using Python:
 ```bash
 python create-channel.py
 ```
+
+When prompted, enter your Kaltura admin secret. The input will not be visible as you type.
