@@ -1,5 +1,21 @@
 ## Changelog for create-channels.py
 
+### [1.4.0] - 2026-07-01
+
+#### Changed
+* Admin secret is now entered at runtime via a secure `getpass` prompt instead of being stored in `.env`.
+* Added empty admin secret guard to exit cleanly rather than producing a cryptic API error.
+* Wrapped all logic in a `main()` function with a top-level `try/except` for clean error output.
+* Validation of required env vars (`PARTNER_ID`, `PARENT_ID`, `MEDIA_SPACE_BASE_URL`) and the input CSV file now happens before the admin secret prompt, so configuration errors are caught immediately.
+* Replaced `raise ValueError` and `raise FileNotFoundError` with `print()`/`return` for user-friendly error messages instead of raw tracebacks.
+* Fixed `load_dotenv()` to use the script's own directory rather than the current working directory.
+* Reordered imports to follow PEP 8 convention (stdlib before third-party); moved all imports to the top of the file.
+* Renamed `filter` variable in `get_existing_channel_names()` to `cat_filter` to avoid shadowing the Python builtin.
+* Fixed redundant `f` prefix on a string with no interpolated values (flake8 F541).
+* Fixed two E501 line-length violations.
+* Removed `ADMIN_SECRET` from `.env.example`; restructured into session variables, script variables, and CSV column headers sections using standard section header format.
+* Updated README to reflect the above changes.
+
 ### [1.3.0] - 2026-04-30
 
 #### Changed
