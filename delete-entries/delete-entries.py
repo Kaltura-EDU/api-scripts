@@ -5,7 +5,7 @@ session, retrieves entry metadata for confirmation, and writes a report to a
 timestamped CSV file before deletion or recycling.
 
 Key features:
-- Prompts for comma-separated entry IDs to delete.
+- Accepts entry IDs via .env or a CSV file.
 - Retrieves and displays entry metadata (name, owner, duration).
 - Exports a report CSV listing all entries and deletion/recycling status.
 - Skips any entries that cannot be retrieved.
@@ -19,24 +19,26 @@ Key features:
   will be blank in the result CSV.
 
 Usage:
-    1. Enter your partner ID and your Kaltura instance's admin secret in the
-       .env file.
+    1. Set your partner ID and other configuration in the .env file.
     2. Enter the entry IDs in the .env file or in a dedicated CSV file.
-    3. Run the script.
+    3. Run the script and enter your admin secret when prompted.
     4. To proceed with deletion, type "DELETE" when prompted for confirmation.
        To proceed with recycling, type "RECYCLE" when prompted.
 """
 
 import csv
+import getpass
 import os
 import sys
 import threading
+import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import requests
-from dotenv import load_dotenv, find_dotenv
+from dotenv import load_dotenv
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import KalturaSessionType
 
@@ -44,7 +46,7 @@ from KalturaClient.Plugins.Core import KalturaSessionType
 # =============================================================================
 # Env / config ----------------------------------------------------------------
 # =============================================================================
-load_dotenv(find_dotenv())
+load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
 
 
 def require_env_int(name: str) -> int:
@@ -62,22 +64,19 @@ def get_env_csv(name: str) -> List[str]:
 
 
 def now_stamp() -> str:
-    # e.g., 2025-08-28-1412 (YYYY-MM-DD-HHMM, 24-hour clock)
     return datetime.now().strftime("%Y-%m-%d-%H%M")
 
 
 PARTNER_ID = require_env_int("PARTNER_ID")
-ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
-if not ADMIN_SECRET:
-    print("[ERROR] Missing ADMIN_SECRET in .env", file=sys.stderr)
-    sys.exit(2)
+ADMIN_SECRET = ""  # set in main() via getpass
 
-USER_ID = os.getenv("USER_ID", "").strip()  # optional
+USER_ID = os.getenv("USER_ID", "").strip()
 SERVICE_URL = os.getenv("SERVICE_URL", "https://www.kaltura.com").rstrip("/")
 PRIVILEGES = os.getenv("PRIVILEGES", "all:*,disableentitlement")
 
 DRY_RUN = (
-    os.getenv("DRY_RUN", "").strip().lower() in {"1", "true", "yes", "y", "on"}
+    os.getenv("DRY_RUN", "").strip().lower()
+    in {"1", "true", "yes", "y", "on"}
 )
 MAX_WORKERS = max(1, int(os.getenv("MAX_WORKERS", "1").strip() or "1"))
 REQUEST_TIMEOUT_SEC = max(
@@ -97,7 +96,6 @@ FORCE_DELETE = (
 
 ENTRY_IDS = get_env_csv("ENTRY_IDS")
 
-# Support for CSV-based entry ID selection
 CSV_FILENAME = os.getenv("CSV_FILENAME", "").strip()
 ENTRY_ID_COLUMN_HEADER = os.getenv("ENTRY_ID_COLUMN_HEADER", "").strip()
 
@@ -182,14 +180,12 @@ def load_entry_ids_from_csv() -> List[str]:
     """
     if not CSV_FILENAME or not ENTRY_ID_COLUMN_HEADER:
         return []
-    # Path relative to script directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
     csv_path = os.path.join(script_dir, CSV_FILENAME)
     entry_ids = []
     try:
         with open(csv_path, "r", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
-            # Normalize headers: strip surrounding quotes and whitespace
             reader.fieldnames = [
                 h.strip().strip('"') for h in reader.fieldnames
             ]
@@ -199,7 +195,8 @@ def load_entry_ids_from_csv() -> List[str]:
                     entry_ids.append(eid)
     except Exception as ex:
         print(
-            f"[ERROR] Failed to load entry IDs from CSV: {csv_path}: {ex}",
+            f"[ERROR] Failed to load entry IDs from CSV:"
+            f" {csv_path}: {ex}",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -259,8 +256,8 @@ def action_one(
         code, message = _response_error(response)
         if code:
             print(
-                f"[SKIPPED] Entry {eid} could not be {action_log.lower()} "
-                f"({code}): {message}"
+                f"[SKIPPED] Entry {eid} could not be"
+                f" {action_log.lower()} ({code}): {message}"
             )
             out["status"] = f"FAILED: {code}"
         else:
@@ -278,153 +275,180 @@ def action_one(
 # Main ------------------------------------------------------------------------
 # =============================================================================
 
-TS = now_stamp()
+def main():
+    global ADMIN_SECRET
 
-# Ensure outputs go into an "output" subfolder alongside this script
-OUTPUT_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "output"
-)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+    ADMIN_SECRET = getpass.getpass("Enter your Kaltura admin secret: ")
+    if not ADMIN_SECRET:
+        print("[ERROR] Admin secret cannot be empty.", file=sys.stderr)
+        sys.exit(1)
 
-PREVIEW_CSV = os.path.join(OUTPUT_DIR, f"{TS}_deleted_entries_PREVIEW.csv")
-RESULT_CSV = os.path.join(OUTPUT_DIR, f"{TS}_deleted_entries_RESULT.csv")
-
-FIELDNAMES = [
-    "entry_id", "entry_name", "owner_user_id",
-    "duration_seconds", "plays", "status",
-]
-
-# Get entry IDs from .csv or .env file ----------------------------------------
-if CSV_FILENAME:
-    entry_ids = load_entry_ids_from_csv()
-elif ENTRY_IDS:
-    entry_ids = ENTRY_IDS
-else:
-    print(
-        "\n[ERROR] No valid ENTRY_IDS or CSV_FILENAME or "
-        "ENTRY_ID_COLUMN_HEADER env variables. Exiting."
+    ts = now_stamp()
+    output_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "output"
     )
-    exit()
-
-# Lookup phase ----------------------------------------------------------------
-total = len(entry_ids)
-
-if LOOKUP_BEFORE_ACTION:
-    print(
-        f"\n[INFO] Looking up {total} entries "
-        f"(MAX_WORKERS={MAX_WORKERS})..."
+    os.makedirs(output_dir, exist_ok=True)
+    preview_csv = os.path.join(
+        output_dir, f"{ts}_deleted_entries_PREVIEW.csv"
+    )
+    result_csv = os.path.join(
+        output_dir, f"{ts}_deleted_entries_RESULT.csv"
     )
 
-    report_by_id: Dict[str, Dict] = {}
-    completed = 0
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futures = {pool.submit(lookup_one, eid): eid for eid in entry_ids}
-        for fut in as_completed(futures):
-            result = fut.result()
-            report_by_id[result["entry_id"]] = result
-            completed += 1
-            if completed % 100 == 0 or completed == total:
-                print(f"  {completed}/{total} looked up...")
-
-    # Preserve original CSV order
-    report = [report_by_id[eid] for eid in entry_ids if eid in report_by_id]
-
-    if all(r["status"] != "FOUND" for r in report):
-        print("\n[INFO] No valid entries to delete. Exiting.")
-        with open(PREVIEW_CSV, mode="w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-            writer.writeheader()
-            writer.writerows(report)
-        exit()
-
-    # Write preview CSV
-    with open(PREVIEW_CSV, mode="w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(report)
-    print(f"\n[INFO] Wrote preview to {PREVIEW_CSV}")
-else:
-    print("\n[INFO] Skipping lookup phase (LOOKUP_BEFORE_ACTION=false).")
-    report = [
-        {
-            "entry_id": eid,
-            "entry_name": "",
-            "owner_user_id": "",
-            "duration_seconds": "",
-            "plays": "",
-            "status": "FOUND",
-        }
-        for eid in entry_ids
+    fieldnames = [
+        "entry_id", "entry_name", "owner_user_id",
+        "duration_seconds", "plays", "status",
     ]
 
-# Dry run: write result CSV and exit without touching anything ----------------
-if DRY_RUN:
-    print("\n[DRY RUN] No entries will be deleted or recycled.")
-    for row in report:
-        if row.get("status") == "FOUND":
-            row["status"] = "DRY RUN"
-    with open(RESULT_CSV, mode="w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(report)
-    print(f"[DRY RUN] Wrote result to {RESULT_CSV}")
-    exit()
-
-# Confirm and delete ----------------------------------------------------------
-confirm = input(
-    "\nType 'DELETE' to permanently delete these entries "
-    "or 'RECYCLE' to put them in the owner's recycle bin: "
-)
-match confirm.strip().upper():
-    case "DELETE":
-        action_log = "DELETED"
-        action = "delete"
-    case "RECYCLE":
-        action_log = "RECYCLED"
-        action = "recycle"
-    case _:
+    # Get entry IDs from CSV or .env
+    if CSV_FILENAME:
+        entry_ids = load_entry_ids_from_csv()
+    elif ENTRY_IDS:
+        entry_ids = ENTRY_IDS
+    else:
         print(
-            f"[ABORTED] No entries deleted or recycled. "
-            f"Unknown action: {confirm.strip().upper()}"
+            "\n[ERROR] No valid ENTRY_IDS or CSV_FILENAME /"
+            " ENTRY_ID_COLUMN_HEADER env variables. Exiting."
         )
-        exit()
+        sys.exit(1)
 
-# Action phase ----------------------------------------------------------------
-found_rows = [r for r in report if r.get("status") == "FOUND"]
-skipped_rows = [r for r in report if r.get("status") != "FOUND"]
-total_found = len(found_rows)
-print(f"\n[INFO] Running {action_log} on {total_found} entries...")
-print(f"[INFO] Writing results incrementally to {RESULT_CSV}")
+    total = len(entry_ids)
 
-# Write header and any skipped (NOT FOUND) rows upfront
-with open(RESULT_CSV, mode="w", newline="", encoding="utf-8") as f:
-    writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-    writer.writeheader()
-    writer.writerows(skipped_rows)
+    # Lookup phase ------------------------------------------------------------
+    if LOOKUP_BEFORE_ACTION:
+        print(
+            f"\n[INFO] Looking up {total} entries"
+            f" (MAX_WORKERS={MAX_WORKERS})..."
+        )
 
-write_lock = threading.Lock()
-completed = 0
-processed_count = 0
+        report_by_id: Dict[str, Dict] = {}
+        looked_up = 0
 
-with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-    futures = {
-        pool.submit(action_one, row, action, action_log): row["entry_id"]
-        for row in found_rows
-    }
-    for fut in as_completed(futures):
-        result = fut.result()
-        completed += 1
-        if result.get("status") == action_log:
-            processed_count += 1
-        with write_lock:
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+            futures = {
+                pool.submit(lookup_one, eid): eid for eid in entry_ids
+            }
+            for fut in as_completed(futures):
+                result = fut.result()
+                report_by_id[result["entry_id"]] = result
+                looked_up += 1
+                if looked_up % 100 == 0 or looked_up == total:
+                    print(f"  {looked_up}/{total} looked up...")
+
+        report = [
+            report_by_id[eid]
+            for eid in entry_ids
+            if eid in report_by_id
+        ]
+
+        if all(r["status"] != "FOUND" for r in report):
+            print("\n[INFO] No valid entries to delete. Exiting.")
             with open(
-                RESULT_CSV, mode="a", newline="", encoding="utf-8"
+                preview_csv, mode="w", newline="", encoding="utf-8"
             ) as f:
-                writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-                writer.writerow(result)
-        if completed % 100 == 0 or completed == total_found:
-            print(f"  {completed}/{total_found} processed...")
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(report)
+            return
 
-print(f"\n[INFO] {processed_count} entries successfully {action_log.lower()}.")
-print(f"[INFO] Wrote report to {RESULT_CSV}")
+        with open(preview_csv, mode="w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(report)
+        print(f"\n[INFO] Wrote preview to {preview_csv}")
+    else:
+        print("\n[INFO] Skipping lookup phase (LOOKUP_BEFORE_ACTION=false).")
+        report = [
+            {
+                "entry_id": eid,
+                "entry_name": "",
+                "owner_user_id": "",
+                "duration_seconds": "",
+                "plays": "",
+                "status": "FOUND",
+            }
+            for eid in entry_ids
+        ]
+
+    # Dry run -----------------------------------------------------------------
+    if DRY_RUN:
+        print("\n[DRY RUN] No entries will be deleted or recycled.")
+        for row in report:
+            if row.get("status") == "FOUND":
+                row["status"] = "DRY RUN"
+        with open(result_csv, mode="w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(report)
+        print(f"[DRY RUN] Wrote result to {result_csv}")
+        return
+
+    # Confirm -----------------------------------------------------------------
+    confirm = input(
+        "\nType 'DELETE' to permanently delete these entries "
+        "or 'RECYCLE' to put them in the owner's recycle bin: "
+    )
+    match confirm.strip().upper():
+        case "DELETE":
+            action_log = "DELETED"
+            action = "delete"
+        case "RECYCLE":
+            action_log = "RECYCLED"
+            action = "recycle"
+        case _:
+            print(
+                f"[ABORTED] No entries deleted or recycled. "
+                f"Unknown action: {confirm.strip().upper()}"
+            )
+            return
+
+    # Action phase ------------------------------------------------------------
+    found_rows = [r for r in report if r.get("status") == "FOUND"]
+    skipped_rows = [r for r in report if r.get("status") != "FOUND"]
+    total_found = len(found_rows)
+    print(f"\n[INFO] Running {action_log} on {total_found} entries...")
+    print(f"[INFO] Writing results incrementally to {result_csv}")
+
+    with open(result_csv, mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(skipped_rows)
+
+    write_lock = threading.Lock()
+    completed = 0
+    processed_count = 0
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = {
+            pool.submit(
+                action_one, row, action, action_log
+            ): row["entry_id"]
+            for row in found_rows
+        }
+        for fut in as_completed(futures):
+            result = fut.result()
+            completed += 1
+            if result.get("status") == action_log:
+                processed_count += 1
+            with write_lock:
+                with open(
+                    result_csv, mode="a", newline="", encoding="utf-8"
+                ) as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writerow(result)
+            if completed % 100 == 0 or completed == total_found:
+                print(f"  {completed}/{total_found} processed...")
+
+    print(
+        f"\n[INFO] {processed_count} entries successfully"
+        f" {action_log.lower()}."
+    )
+    print(f"[INFO] Wrote report to {result_csv}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"[ERROR] Unhandled error: {e}", file=sys.stderr)
+        traceback.print_exc()
