@@ -1,5 +1,24 @@
 # Changelog – download-entries.py
 
+## [v2.0.0] – 2026-07-06
+### Added
+- **Category name search**: new dedicated option to search by category name (separate from category ID). Uses Kaltura's `freeText` API with client-side exact-name filtering to match KMC search behavior. When multiple categories share the same name, the script lists them with their full paths and prompts the user to choose.
+- **Comma-delimited support for all search fields**: all five search modes (tag, category ID, category name, entry ID, owner user ID) now accept comma-delimited values. Multiple values are combined with OR logic.
+- **Subdirectory option**: when multiple comma-delimited values are entered for tags, category IDs, category names, or owner IDs, the script offers to download each term's results into a separate named subdirectory, each with its own CSV report.
+- **Download-more loop**: after each download batch completes, the script asks whether to download more and returns to the search menu without requiring credentials to be re-entered.
+- **Multithreaded downloads**: entry downloads now run in a configurable thread pool (default: 5 workers, set via `MAX_WORKERS` global). Achieved gigabit-level throughput in testing.
+- **Per-entry retry wrapper**: each worker thread retries the full entry processing pipeline (including child entries) up to `RETRY_ATTEMPTS` times with exponential backoff before giving up.
+- **Accurate completion reporting**: the final summary line now distinguishes between a fully successful run and one with failures, and reports failure counts per batch when using subdirectories.
+
+### Changed
+- Search menu expanded from 4 to 5 options; category ID and category name are now separate choices.
+- Caffeinate is now scoped to active download sessions only — it starts when a download begins and terminates when it finishes, rather than running between sessions in the download-more loop.
+- Child entry progress messages now use an indented `↳` prefix instead of repeating the parent entry's index number, which was confusing in multithreaded output.
+
+### Fixed
+- `get_entries` now retries each page fetch on `KalturaException` and `KalturaClientException` (e.g., network timeouts), and prints a progress line per batch when fetching entries upfront. Previously, a single timeout would crash the script.
+- `get_child_entries` now retries on both `KalturaException` and `KalturaClientException` with exponential backoff. Previously it only caught `KalturaException` and had no retry logic.
+
 ## [v1.6.0] – 2026-05-01
 ### Added
 - Duplicate filename handling: if two entries produce the same filename (e.g., multiple "Person's Zoom Meeting" recordings), the entry ID is appended to the second file's name to keep both and prevent silent overwrites.

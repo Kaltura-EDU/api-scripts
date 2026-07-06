@@ -80,19 +80,31 @@ def resolve_category(cat_id, cat_name, id_var_name):
         cat = client.category.get(int(cat_id))
         return str(cat.id), cat.name
     cat_filter = KalturaCategoryFilter()
-    cat_filter.nameEqual = cat_name
-    result = client.category.list(cat_filter, KalturaFilterPager())
-    if not result.objects:
+    cat_filter.freeText = cat_name
+    pager = KalturaFilterPager()
+    pager.pageSize = 500
+    pager.pageIndex = 1
+    candidates = []
+    while True:
+        result = client.category.list(cat_filter, pager)
+        if not result.objects:
+            break
+        candidates.extend(result.objects)
+        if len(result.objects) < pager.pageSize:
+            break
+        pager.pageIndex += 1
+    matches = [c for c in candidates if c.name == cat_name]
+    if not matches:
         print(f"Error: no category found with name '{cat_name}'.")
         exit()
-    if len(result.objects) > 1:
-        ids = ", ".join(str(c.id) for c in result.objects)
+    if len(matches) > 1:
+        ids = ", ".join(str(c.id) for c in matches)
         print(
             f"Error: multiple categories match name '{cat_name}'"
             f" (IDs: {ids}). Use {id_var_name} instead."
         )
         exit()
-    cat = result.objects[0]
+    cat = matches[0]
     return str(cat.id), cat.name
 
 
