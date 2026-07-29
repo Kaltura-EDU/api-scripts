@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.6.0] - 2026-07-28
+### Changed
+- Each run now writes into a timestamped subfolder of `output/` named for the processing date and time (e.g. `output/2026-07-28_142530/`), keeping batches separated and preventing repeated runs from overwriting each other. The entry creation date has been dropped from individual filenames (which now start with the entry ID), shortening them.
+
+### Added
+- Two new filename-component toggles, `INCLUDE_CREATION_DATE_IN_FILENAMES` (default false; uses the **entry** creation date, not the caption track's) and `INCLUDE_CAPTION_NAME_IN_FILENAMES` (default true; the entry/video title), joining the existing `INCLUDE_CAPTION_LABEL_IN_FILENAMES`. The entry ID is always included; at least one of the three toggles must be true or the script exits with a clear error. When multiple caption tracks on one entry would otherwise map to the same filename (e.g. the label is omitted), a numeric suffix is added so none overwrite each other.
+- New `SKIP_AUTO_GENERATED` toggle to skip machine (ASR) caption tracks, paired with `AUTO_GENERATED_LABEL` (default `(auto-generated)`) — the label suffix KMC appends to auto-generated captions (KMC > Settings > Reach > Service Parameters). The value is the suffix only and is matched as a case-insensitive substring, so a single setting catches auto-generated tracks across all languages (e.g. `English (auto-generated)`, `Spanish (auto-generated)`). Enabling `SKIP_AUTO_GENERATED` with an empty `AUTO_GENERATED_LABEL` exits with a clear error rather than skipping every track.
+- Automatic retry with linear backoff for transient network failures (timeouts, connection resets). All Kaltura API calls — including `session.start` — now go through a `call_with_retry` helper. Because `KalturaClientException` is not a subclass of `KalturaException`, these network errors were previously not retried. Configurable via `REQUEST_TIMEOUT` (default 120), `MAX_NETWORK_RETRIES` (default 5), and `NETWORK_RETRY_DELAY` (default 5) in `.env`.
+- `OUTPUT_FORMAT` is now validated at startup; an invalid value exits with a clear error instead of silently downloading and then deleting every file.
+- `requests` added to `requirements.txt` (used directly for network-error handling).
+
+### Changed
+- Removed the `DOWNLOAD_FOLDER` option. Captions are now always written to a fixed `output` folder next to the script. `output/` has been added to `.gitignore`.
+
 ## [1.5.0] - 2026-06-30
 ### Changed
 - Admin secret is now entered at runtime via a secure prompt (no echo) instead of being stored in `.env`.

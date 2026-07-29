@@ -19,6 +19,7 @@ venv/
 *.log
 
 # Captions output
+output/
 captions_download/
 
 # IDE/project files

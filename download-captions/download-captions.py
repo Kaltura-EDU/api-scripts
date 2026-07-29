@@ -6,11 +6,15 @@ transcripts.
 Output format is controlled by OUTPUT_FORMAT in .env: 'srt' (default),
 'txt', or 'both'. Configuration is managed through a .env file (see
 README for details).
+
+For security, the Kaltura admin secret is NOT read from .env; the script
+prompts for it interactively at runtime so it is never stored on disk.
 """
 
 import os
 import re
 import ssl
+import time
 import getpass
 import urllib.request
 import urllib.parse
@@ -19,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
+import requests
 from dotenv import load_dotenv
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
@@ -29,6 +34,7 @@ from KalturaClient.Plugins.Core import (
     KalturaCategoryFilter,
 )
 from KalturaClient.Plugins.Caption import KalturaCaptionAssetFilter
+from KalturaClient.exceptions import KalturaClientException
 import pysrt
 
 # Load .env alongside this script, not relying on current working directory
@@ -40,12 +46,29 @@ def _env_bool(key: str, default: str = "false") -> bool:
 
 
 # ---------- Configuration from .env ----------
+# NOTE: the admin secret is intentionally NOT read from .env. It is prompted
+# for interactively at runtime (see main) so it is never stored on disk.
 PARTNER_ID = os.getenv("PARTNER_ID", "").strip()
 SERVICE_URL = os.getenv(
     "KALTURA_SERVICE_URL", "https://www.kaltura.com/"
 ).strip()
 
-DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER", "output").strip()
+# Captions are written to a per-run subfolder named with the processing
+# date and time, inside a fixed "output" folder next to this script — e.g.
+# output/2026-07-28_142530/. This keeps filenames short and keeps each run
+# (batch) neatly separated. The time component means repeated runs on the
+# same day don't collide.
+DOWNLOAD_FOLDER = "output"
+RUN_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+RUN_OUTPUT_DIR = os.path.join(DOWNLOAD_FOLDER, RUN_TIMESTAMP)
+
+# ---------- Reliability knobs (from .env) ----------
+# Seconds before an individual API request times out.
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "120"))
+# Retries for transient network errors before giving up.
+MAX_NETWORK_RETRIES = int(os.getenv("MAX_NETWORK_RETRIES", "5"))
+# Base seconds between retries (grows linearly: delay × attempt).
+NETWORK_RETRY_DELAY = int(os.getenv("NETWORK_RETRY_DELAY", "5"))
 
 # OUTPUT_FORMAT controls what gets saved: 'srt' (default), 'txt', or 'both'.
 # Falls back to legacy CONVERT_TO_TXT if OUTPUT_FORMAT is not set.
@@ -54,17 +77,70 @@ if not _output_format_raw:
     _output_format_raw = (
         "txt" if _env_bool("CONVERT_TO_TXT", "false") else "srt"
     )
+if _output_format_raw not in ("srt", "txt", "both"):
+    raise SystemExit(
+        f"Error: invalid OUTPUT_FORMAT '{_output_format_raw}' in .env. "
+        "Valid values are: srt, txt, both."
+    )
 OUTPUT_FORMAT = _output_format_raw
 SAVE_SRT = OUTPUT_FORMAT in ("srt", "both")
 SAVE_TXT = OUTPUT_FORMAT in ("txt", "both")
 INCLUDE_CHILD_CATEGORIES = _env_bool("INCLUDE_CHILD_CATEGORIES", "true")
 DEBUG = _env_bool("DEBUG", "false")
 
-# Behavior toggles
+# ---------- Filename component toggles ----------
+# The entry ID is ALWAYS included in the filename (it uniquely identifies the
+# entry). Each toggle below adds one more component. At least one must be true
+# so filenames carry something beyond the bare entry ID — enforced just below.
+#
+# INCLUDE_CREATION_DATE_IN_FILENAMES uses the ENTRY's (video's) creation date
+# (entry.createdAt), NOT the caption track's own creation date. It is the same
+# for every caption track on a given entry.
+INCLUDE_CREATION_DATE_IN_FILENAMES = _env_bool(
+    "INCLUDE_CREATION_DATE_IN_FILENAMES", "false"
+)
+# INCLUDE_CAPTION_NAME_IN_FILENAMES toggles the entry (video) title
+# (entry.name), e.g. "XSE1_5B_Axial_Compression".
+INCLUDE_CAPTION_NAME_IN_FILENAMES = _env_bool(
+    "INCLUDE_CAPTION_NAME_IN_FILENAMES", "true"
+)
+# INCLUDE_CAPTION_LABEL_IN_FILENAMES toggles the caption track's label,
+# e.g. "English" or "English (auto-generated)".
 INCLUDE_CAPTION_LABEL_IN_FILENAMES = _env_bool(
     "INCLUDE_CAPTION_LABEL_IN_FILENAMES", "true"
 )
+if not (
+    INCLUDE_CREATION_DATE_IN_FILENAMES
+    or INCLUDE_CAPTION_NAME_IN_FILENAMES
+    or INCLUDE_CAPTION_LABEL_IN_FILENAMES
+):
+    raise SystemExit(
+        "Error: at least one of INCLUDE_CREATION_DATE_IN_FILENAMES, "
+        "INCLUDE_CAPTION_NAME_IN_FILENAMES, or "
+        "INCLUDE_CAPTION_LABEL_IN_FILENAMES must be true in .env, so caption "
+        "filenames carry more than the bare entry ID."
+    )
+
+# Behavior toggles
 SKIP_CHILD_ENTRIES = _env_bool("SKIP_CHILD_ENTRIES", "true")
+
+# Skip machine (ASR) caption tracks. KMC optionally appends a suffix to the
+# label of auto-generated captions — set in KMC under Settings > Reach >
+# Service Parameters ("machine captions label suffix"). AUTO_GENERATED_LABEL
+# is just that suffix (e.g. "(auto-generated)"), NOT a full track label, and
+# it is matched as a case-insensitive substring — so it catches the suffix in
+# every language (e.g. "English (auto-generated)", "Spanish (auto-generated)").
+SKIP_AUTO_GENERATED = _env_bool("SKIP_AUTO_GENERATED", "false")
+AUTO_GENERATED_LABEL = os.getenv(
+    "AUTO_GENERATED_LABEL", "(auto-generated)"
+).strip()
+if SKIP_AUTO_GENERATED and not AUTO_GENERATED_LABEL:
+    raise SystemExit(
+        "Error: SKIP_AUTO_GENERATED is true but AUTO_GENERATED_LABEL is "
+        "empty. Set AUTO_GENERATED_LABEL to the suffix KMC appends to "
+        "machine-caption labels (e.g. \"(auto-generated)\"), or set "
+        "SKIP_AUTO_GENERATED=false."
+    )
 
 # Query inputs (priority: ENTRY_IDS > CATEGORY_IDS > TAGS > OWNER)
 CATEGORY_IDS = os.getenv("CATEGORY_IDS", "").strip()
@@ -78,11 +154,37 @@ KALTURA_USER = os.getenv("KALTURA_USER", "admin").strip()
 
 
 # ---------- Kaltura helpers ----------
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures (timeouts, connection resets). Kaltura raises those as
+    KalturaClientException, which is NOT a subclass of KalturaException, so
+    it is caught here separately; requests' own errors are covered too. A
+    real, well-formed API error (KalturaException) is never retried here —
+    callers handle those."""
+    for attempt in range(1, MAX_NETWORK_RETRIES + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            KalturaClientException,
+            requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == MAX_NETWORK_RETRIES:
+                raise
+            delay = NETWORK_RETRY_DELAY * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{MAX_NETWORK_RETRIES} in {delay}s]"
+            )
+            time.sleep(delay)
+
+
 def get_kaltura_client(partner_id: str, admin_secret: str) -> KalturaClient:
     config = KalturaConfiguration(partner_id)
     config.serviceUrl = SERVICE_URL
+    config.requestTimeout = REQUEST_TIMEOUT
     client = KalturaClient(config)
-    ks = client.session.start(
+    ks = call_with_retry(
+        client.session.start,
         admin_secret,
         KALTURA_USER,
         KalturaSessionType.ADMIN,
@@ -147,7 +249,9 @@ def get_entry_ids_for_category(
                         f"Expanding subcategories for category {cid}"
                         f" (page {pager_cat.pageIndex})…"
                     )
-                    cres = client.category.list(cf, pager_cat)
+                    cres = call_with_retry(
+                        client.category.list, cf, pager_cat
+                    )
                     if not getattr(cres, "objects", None):
                         break
                     for c in cres.objects:
@@ -185,7 +289,9 @@ def get_entry_ids_for_category(
             pager.pageSize = 500
             pager.pageIndex = 1
             while True:
-                res = client.categoryEntry.list(cef, pager)
+                res = call_with_retry(
+                    client.categoryEntry.list, cef, pager
+                )
                 if not getattr(res, "objects", None):
                     break
                 for ce in res.objects:
@@ -223,7 +329,7 @@ def get_entries_by_ids(client: KalturaClient, entry_ids: List[str]):
     entries = []
     for eid in entry_ids:
         try:
-            entry = client.baseEntry.get(eid)
+            entry = call_with_retry(client.baseEntry.get, eid)
             if entry:
                 entries.append(entry)
         except Exception as e:
@@ -258,7 +364,9 @@ def get_entries(client: KalturaClient, method: str, identifier: str):
 
     try:
         while True:
-            result = client.baseEntry.list(base_filter, pager)
+            result = call_with_retry(
+                client.baseEntry.list, base_filter, pager
+            )
             if not getattr(result, "objects", None):
                 break
             entries.extend(result.objects)
@@ -281,11 +389,28 @@ def get_captions(client: KalturaClient, entry_id: str):
         pass
     pager = KalturaFilterPager()
     try:
-        res = client.caption.captionAsset.list(cap_filter, pager)
-        return res.objects if getattr(res, "objects", None) else []
+        res = call_with_retry(
+            client.caption.captionAsset.list, cap_filter, pager
+        )
+        captions = res.objects if getattr(res, "objects", None) else []
     except Exception as e:
         print(f"Error retrieving captions for entry {entry_id}: {e}")
         return []
+
+    if SKIP_AUTO_GENERATED and AUTO_GENERATED_LABEL:
+        needle = AUTO_GENERATED_LABEL.lower()
+        kept = []
+        for cap in captions:
+            if needle in (cap.label or "").lower():
+                print(
+                    f"  Skipping auto-generated caption "
+                    f"'{cap.label}' for entry {entry_id}"
+                )
+            else:
+                kept.append(cap)
+        captions = kept
+
+    return captions
 
 
 def convert_caption_to_txt(caption_path: str, caption_ext: str) -> str:
@@ -366,24 +491,48 @@ def _determine_caption_ext(cap, url: str) -> str:
 
 
 def download_captions(client: KalturaClient, captions, entry, counter):
-    os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+    os.makedirs(RUN_OUTPUT_DIR, exist_ok=True)
+    entry_id = entry.id
+    entry_title = sanitize_filename(entry.name)
+    # Entry (video) creation date, in UTC. Only used if the toggle is on.
     entry_date = datetime.fromtimestamp(
         entry.createdAt, tz=timezone.utc
     ).strftime("%Y-%m-%d")
-    entry_id = entry.id
-    entry_title = sanitize_filename(entry.name)
 
     for cap in captions:
         try:
             raw_label = cap.label or ""
             label = sanitize_filename(raw_label)
-            url = client.caption.captionAsset.getUrl(cap.id, 0)
+            url = call_with_retry(
+                client.caption.captionAsset.getUrl, cap.id, 0
+            )
             ext = _determine_caption_ext(cap, url)  # .srt / .vtt / etc.
+
+            # Assemble the filename. Entry ID is always present; the date,
+            # entry title, and label are each optional (at least one of the
+            # three is guaranteed true by the startup check).
+            parts = []
+            if INCLUDE_CREATION_DATE_IN_FILENAMES:
+                parts.append(entry_date)
+            parts.append(entry_id)
+            if INCLUDE_CAPTION_NAME_IN_FILENAMES:
+                parts.append(entry_title)
             if INCLUDE_CAPTION_LABEL_IN_FILENAMES and label:
-                base_name = f"{entry_date}_{entry_id}_{entry_title}_{label}"
-            else:
-                base_name = f"{entry_date}_{entry_id}_{entry_title}"
-            out_path = os.path.join(DOWNLOAD_FOLDER, base_name + ext)
+                parts.append(label)
+            base_name = "_".join(parts)
+
+            out_path = os.path.join(RUN_OUTPUT_DIR, base_name + ext)
+            # If several tracks on one entry would map to the same name
+            # (e.g. the label is omitted), add a numeric suffix so none
+            # overwrite each other.
+            if os.path.exists(out_path):
+                n = 2
+                while os.path.exists(
+                    os.path.join(RUN_OUTPUT_DIR, f"{base_name}_{n}{ext}")
+                ):
+                    n += 1
+                base_name = f"{base_name}_{n}"
+                out_path = os.path.join(RUN_OUTPUT_DIR, base_name + ext)
 
             try:
                 with (
@@ -438,8 +587,22 @@ def main():
         print("[DEBUG] Using .env from:", Path(__file__).with_name(".env"))
         print("[DEBUG] PARTNER_ID set:", bool(PARTNER_ID))
         print("[DEBUG] KALTURA_SERVICE_URL:", SERVICE_URL)
-        print("[DEBUG] DOWNLOAD_FOLDER:", DOWNLOAD_FOLDER)
+        print("[DEBUG] RUN_OUTPUT_DIR:", RUN_OUTPUT_DIR)
         print("[DEBUG] OUTPUT_FORMAT:", OUTPUT_FORMAT)
+        print("[DEBUG] SKIP_AUTO_GENERATED:", SKIP_AUTO_GENERATED)
+        print("[DEBUG] AUTO_GENERATED_LABEL:", AUTO_GENERATED_LABEL)
+        print(
+            "[DEBUG] INCLUDE_CREATION_DATE_IN_FILENAMES:",
+            INCLUDE_CREATION_DATE_IN_FILENAMES,
+        )
+        print(
+            "[DEBUG] INCLUDE_CAPTION_NAME_IN_FILENAMES:",
+            INCLUDE_CAPTION_NAME_IN_FILENAMES,
+        )
+        print(
+            "[DEBUG] INCLUDE_CAPTION_LABEL_IN_FILENAMES:",
+            INCLUDE_CAPTION_LABEL_IN_FILENAMES,
+        )
         print("[DEBUG] INCLUDE_CHILD_CATEGORIES:", INCLUDE_CHILD_CATEGORIES)
         print("[DEBUG] ENTRY_IDS:", ENTRY_IDS)
         print("[DEBUG] CATEGORY_IDS:", CATEGORY_IDS)
@@ -506,6 +669,8 @@ def main():
     if not entries:
         print("No entries found. Exiting.")
         return
+
+    print(f"Saving captions to: {RUN_OUTPUT_DIR}/")
 
     counter = [1]
     for entry in entries:

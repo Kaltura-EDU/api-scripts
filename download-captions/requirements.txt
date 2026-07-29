@@ -2,3 +2,4 @@ KalturaApiClient
 lxml
 pysrt
 dotenv
+requests
