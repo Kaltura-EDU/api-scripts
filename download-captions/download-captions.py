@@ -1,7 +1,9 @@
 """
 download-captions.py
-Downloads caption files for Kaltura entries and (optionally) writes TXT
-transcripts.
+Downloads caption assets for Kaltura entries and (optionally) writes TXT
+transcripts. In Kaltura, both captions and audio descriptions are caption
+assets; INCLUDE_ASR_CAPTIONS, INCLUDE_NON_ASR_CAPTIONS, and
+INCLUDE_AUDIO_DESCRIPTIONS in .env control which types are downloaded.
 
 Output format is controlled by OUTPUT_FORMAT in .env: 'srt' (default),
 'txt', or 'both'. Configuration is managed through a .env file (see
@@ -37,6 +39,21 @@ from KalturaClient.Plugins.Caption import KalturaCaptionAssetFilter
 from KalturaClient.exceptions import KalturaClientException
 import pysrt
 
+# Audio descriptions are distinguished from captions by the caption asset's
+# `usage` field (KalturaCaptionAssetUsage). That enum — and the `usage` field
+# itself — were added to the Python SDK in KalturaApiClient 22.0.0. On older
+# SDKs the field is silently absent, so we feature-detect it here and fail
+# loudly later only if the run actually depends on telling the two apart.
+try:
+    from KalturaClient.Plugins.Caption import KalturaCaptionAssetUsage
+    AUDIO_DESCRIPTION_USAGE = getattr(
+        KalturaCaptionAssetUsage, "EXTENDED_AUDIO_DESCRIPTION", "1"
+    )
+    SDK_SUPPORTS_USAGE = True
+except ImportError:
+    AUDIO_DESCRIPTION_USAGE = "1"
+    SDK_SUPPORTS_USAGE = False
+
 # Load .env alongside this script, not relying on current working directory
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"), override=False)
 
@@ -70,8 +87,12 @@ MAX_NETWORK_RETRIES = int(os.getenv("MAX_NETWORK_RETRIES", "5"))
 # Base seconds between retries (grows linearly: delay × attempt).
 NETWORK_RETRY_DELAY = int(os.getenv("NETWORK_RETRY_DELAY", "5"))
 
-# OUTPUT_FORMAT controls what gets saved: 'srt' (default), 'txt', or 'both'.
-# Falls back to legacy CONVERT_TO_TXT if OUTPUT_FORMAT is not set.
+# OUTPUT_FORMAT controls what gets saved FOR CAPTIONS: 'srt' (default —
+# original file only), 'txt' (converted transcript only), or 'both'. It does
+# NOT affect audio descriptions, which are always kept in their original
+# format and never converted to TXT (stripping their timecodes would make the
+# text meaningless). Falls back to legacy CONVERT_TO_TXT if OUTPUT_FORMAT is
+# not set.
 _output_format_raw = os.getenv("OUTPUT_FORMAT", "").strip().lower()
 if not _output_format_raw:
     _output_format_raw = (
@@ -124,22 +145,72 @@ if not (
 # Behavior toggles
 SKIP_CHILD_ENTRIES = _env_bool("SKIP_CHILD_ENTRIES", "true")
 
-# Skip machine (ASR) caption tracks. KMC optionally appends a suffix to the
-# label of auto-generated captions — set in KMC under Settings > Reach >
-# Service Parameters ("machine captions label suffix"). AUTO_GENERATED_LABEL
-# is just that suffix (e.g. "(auto-generated)"), NOT a full track label, and
-# it is matched as a case-insensitive substring — so it catches the suffix in
-# every language (e.g. "English (auto-generated)", "Spanish (auto-generated)").
-SKIP_AUTO_GENERATED = _env_bool("SKIP_AUTO_GENERATED", "false")
+# ---------- Which caption-asset types to download ----------
+# In Kaltura, captions AND audio descriptions are both "caption assets". We
+# sort each asset into one of three buckets and download only the ones whose
+# toggle is true:
+#   1. Audio descriptions — identified by the asset's `usage` field (the
+#      KalturaCaptionAssetUsage enum: 1 = audio description). This is the
+#      reliable discriminator; label text is not.
+#   2. ASR (machine) captions — a caption whose label contains
+#      AUTO_GENERATED_LABEL (see below).
+#   3. Non-ASR captions — every other caption. "Non-ASR" only means "not
+#      labeled as machine-generated"; it does NOT assert the captions are
+#      accurate or human-made.
+# At least one of the three must be true (enforced below).
+INCLUDE_ASR_CAPTIONS = _env_bool("INCLUDE_ASR_CAPTIONS", "true")
+INCLUDE_NON_ASR_CAPTIONS = _env_bool("INCLUDE_NON_ASR_CAPTIONS", "true")
+INCLUDE_AUDIO_DESCRIPTIONS = _env_bool("INCLUDE_AUDIO_DESCRIPTIONS", "false")
+
+# The suffix KMC appends to the label of ASR (machine) captions — set in KMC
+# under Settings > Reach > Service Parameters ("machine captions label
+# suffix"). AUTO_GENERATED_LABEL is just that suffix (e.g. "(auto-generated)"),
+# NOT a full track label, and it is matched as a case-insensitive substring —
+# so it catches the suffix in every language (e.g. "English (auto-generated)",
+# "Spanish (auto-generated)").
 AUTO_GENERATED_LABEL = os.getenv(
     "AUTO_GENERATED_LABEL", "(auto-generated)"
 ).strip()
-if SKIP_AUTO_GENERATED and not AUTO_GENERATED_LABEL:
+
+if not (
+    INCLUDE_ASR_CAPTIONS
+    or INCLUDE_NON_ASR_CAPTIONS
+    or INCLUDE_AUDIO_DESCRIPTIONS
+):
     raise SystemExit(
-        "Error: SKIP_AUTO_GENERATED is true but AUTO_GENERATED_LABEL is "
-        "empty. Set AUTO_GENERATED_LABEL to the suffix KMC appends to "
-        "machine-caption labels (e.g. \"(auto-generated)\"), or set "
-        "SKIP_AUTO_GENERATED=false."
+        "Error: at least one of INCLUDE_ASR_CAPTIONS, "
+        "INCLUDE_NON_ASR_CAPTIONS, or INCLUDE_AUDIO_DESCRIPTIONS must be "
+        "true in .env — otherwise there is nothing to download."
+    )
+
+# Telling audio descriptions apart from other captions requires the caption
+# asset `usage` field, added to the SDK in KalturaApiClient 22.0.0. If the SDK
+# is too old AND the run needs that distinction (audio descriptions treated
+# differently from non-ASR captions), stop with a clear, actionable error
+# rather than silently misclassifying audio descriptions as plain captions.
+if not SDK_SUPPORTS_USAGE and (
+    INCLUDE_AUDIO_DESCRIPTIONS != INCLUDE_NON_ASR_CAPTIONS
+):
+    raise SystemExit(
+        "Error: your installed KalturaApiClient is too old to identify audio "
+        "descriptions (it lacks the caption-asset 'usage' field, added in "
+        "22.0.0), so the script cannot separate audio descriptions from other "
+        "captions. Upgrade it with:\n"
+        "    pip install -U KalturaApiClient\n"
+        "(or re-run 'pip install -r requirements.txt'). Alternatively, set "
+        "INCLUDE_AUDIO_DESCRIPTIONS and INCLUDE_NON_ASR_CAPTIONS to the same "
+        "value so the distinction isn't needed."
+    )
+
+# AUTO_GENERATED_LABEL is only needed to tell ASR captions apart from non-ASR
+# captions, i.e. when the two are set differently. If both are treated the
+# same, the label is irrelevant.
+if INCLUDE_ASR_CAPTIONS != INCLUDE_NON_ASR_CAPTIONS and not AUTO_GENERATED_LABEL:
+    raise SystemExit(
+        "Error: INCLUDE_ASR_CAPTIONS and INCLUDE_NON_ASR_CAPTIONS differ, so "
+        "AUTO_GENERATED_LABEL is needed to tell the two apart, but it is "
+        "empty. Set it to the suffix KMC appends to machine-caption labels "
+        "(e.g. \"(auto-generated)\")."
     )
 
 # Query inputs (priority: ENTRY_IDS > CATEGORY_IDS > TAGS > OWNER)
@@ -379,6 +450,46 @@ def get_entries(client: KalturaClient, method: str, identifier: str):
     return entries
 
 
+# Human-readable names for the three caption-asset buckets.
+_KIND_LABELS = {
+    "audio_description": "audio description",
+    "asr": "auto-generated caption",
+    "non_asr": "caption",
+}
+
+
+def _usage_value(cap) -> str:
+    """Return a caption asset's `usage` as a plain string ("0"/"1"/…), or ""
+    if the SDK doesn't expose it. In the SDK, `usage` is a
+    KalturaCaptionAssetUsage enum object whose value is read via .getValue();
+    older SDKs (< 22.0.0) omit the field entirely, so getattr returns None.
+    """
+    raw = getattr(cap, "usage", None)
+    if raw is None:
+        return ""
+    if hasattr(raw, "getValue"):
+        raw = raw.getValue()
+    return str(raw).strip() if raw is not None else ""
+
+
+def classify_caption_asset(cap) -> str:
+    """Sort a caption asset into 'audio_description', 'asr', or 'non_asr'.
+
+    Audio descriptions are identified by the `usage` field (the
+    KalturaCaptionAssetUsage enum: "1" = audio description), which is more
+    reliable than the label. Only exactly that usage value is treated as an
+    audio description; everything else is a caption, so unknown/new usage
+    values (and SDKs too old to report usage) fail safe as captions. A caption
+    is then 'asr' if its label contains AUTO_GENERATED_LABEL, else 'non_asr'.
+    """
+    if _usage_value(cap) == AUDIO_DESCRIPTION_USAGE:
+        return "audio_description"
+    label = getattr(cap, "label", "") or ""
+    if AUTO_GENERATED_LABEL and AUTO_GENERATED_LABEL.lower() in label.lower():
+        return "asr"
+    return "non_asr"
+
+
 def get_captions(client: KalturaClient, entry_id: str):
     cap_filter = KalturaCaptionAssetFilter()
     cap_filter.entryIdEqual = entry_id
@@ -397,20 +508,23 @@ def get_captions(client: KalturaClient, entry_id: str):
         print(f"Error retrieving captions for entry {entry_id}: {e}")
         return []
 
-    if SKIP_AUTO_GENERATED and AUTO_GENERATED_LABEL:
-        needle = AUTO_GENERATED_LABEL.lower()
-        kept = []
-        for cap in captions:
-            if needle in (cap.label or "").lower():
-                print(
-                    f"  Skipping auto-generated caption "
-                    f"'{cap.label}' for entry {entry_id}"
-                )
-            else:
-                kept.append(cap)
-        captions = kept
-
-    return captions
+    # Keep only the asset types whose toggle is true.
+    include = {
+        "audio_description": INCLUDE_AUDIO_DESCRIPTIONS,
+        "asr": INCLUDE_ASR_CAPTIONS,
+        "non_asr": INCLUDE_NON_ASR_CAPTIONS,
+    }
+    kept = []
+    for cap in captions:
+        kind = classify_caption_asset(cap)
+        if include[kind]:
+            kept.append(cap)
+        else:
+            print(
+                f"  Skipping {_KIND_LABELS[kind]} "
+                f"'{cap.label}' for entry {entry_id}"
+            )
+    return kept
 
 
 def convert_caption_to_txt(caption_path: str, caption_ext: str) -> str:
@@ -507,6 +621,9 @@ def download_captions(client: KalturaClient, captions, entry, counter):
                 client.caption.captionAsset.getUrl, cap.id, 0
             )
             ext = _determine_caption_ext(cap, url)  # .srt / .vtt / etc.
+            is_audio_description = (
+                classify_caption_asset(cap) == "audio_description"
+            )
 
             # Assemble the filename. Entry ID is always present; the date,
             # entry title, and label are each optional (at least one of the
@@ -546,7 +663,15 @@ def download_captions(client: KalturaClient, captions, entry, counter):
                 # to 9,999 downloaded caption assets.
                 print(f"{counter[0]:>4}. Downloaded:\t{out_path}")
 
-                if SAVE_TXT:
+                # OUTPUT_FORMAT (srt/txt/both) governs CAPTIONS only. TXT
+                # conversion strips timecodes to make a readable transcript —
+                # meaningful for captions, but not for audio descriptions,
+                # where the timing IS the content. So audio descriptions are
+                # always kept in their original format and never converted.
+                do_txt = SAVE_TXT and not is_audio_description
+                keep_original = SAVE_SRT or is_audio_description
+
+                if do_txt:
                     txt_path = convert_caption_to_txt(out_path, ext)
                     if txt_path:
                         print(f"      Converted to TXT:\t{txt_path}")
@@ -555,8 +680,13 @@ def download_captions(client: KalturaClient, captions, entry, counter):
                             "      Warning:\tconversion failed"
                             f" for {out_path}"
                         )
+                elif SAVE_TXT and is_audio_description:
+                    print(
+                        "      Kept audio description in original format"
+                        " (not converted to TXT)"
+                    )
 
-                if not SAVE_SRT and os.path.exists(out_path):
+                if not keep_original and os.path.exists(out_path):
                     try:
                         os.remove(out_path)
                         print(f"   Deleted:\t\t{out_path}")
@@ -589,7 +719,9 @@ def main():
         print("[DEBUG] KALTURA_SERVICE_URL:", SERVICE_URL)
         print("[DEBUG] RUN_OUTPUT_DIR:", RUN_OUTPUT_DIR)
         print("[DEBUG] OUTPUT_FORMAT:", OUTPUT_FORMAT)
-        print("[DEBUG] SKIP_AUTO_GENERATED:", SKIP_AUTO_GENERATED)
+        print("[DEBUG] INCLUDE_ASR_CAPTIONS:", INCLUDE_ASR_CAPTIONS)
+        print("[DEBUG] INCLUDE_NON_ASR_CAPTIONS:", INCLUDE_NON_ASR_CAPTIONS)
+        print("[DEBUG] INCLUDE_AUDIO_DESCRIPTIONS:", INCLUDE_AUDIO_DESCRIPTIONS)
         print("[DEBUG] AUTO_GENERATED_LABEL:", AUTO_GENERATED_LABEL)
         print(
             "[DEBUG] INCLUDE_CREATION_DATE_IN_FILENAMES:",

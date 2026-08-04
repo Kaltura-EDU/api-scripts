@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0] - 2026-07-28
+### Added
+- **Audio description support.** Kaltura stores captions and audio descriptions as the same "caption asset" type; the script now downloads audio descriptions too. They are identified by the asset's `usage` field (`KalturaCaptionAssetUsage` = 1), which is more reliable than the label — only exactly `usage=1` is treated as an audio description, so unknown/new usage values fail safe as captions.
+- **Requires KalturaApiClient 22.0.0+** for audio-description detection — the `usage` field was added to the SDK in 22.0.0; `requirements.txt` now pins `>=22.0.0`. In the SDK, `usage` is a `KalturaCaptionAssetUsage` enum object read via `.getValue()` (handled accordingly). If the installed SDK is older *and* the run needs to tell audio descriptions apart from other captions, the script exits with a clear "upgrade your SDK" message instead of silently misclassifying them.
+- README onboarding section: how to create `.env` by copying `.env.example` (including the macOS Finder ⌘-Shift-. tip for showing hidden dotfiles), a clearer Required-vs-optional variable breakdown, and a dedicated Query filters section.
+
+### Changed
+- **`OUTPUT_FORMAT` now applies to captions only.** Audio descriptions are always saved in their original format and never converted to TXT — stripping their timecodes (the timing is the content) produced meaningless text. So `OUTPUT_FORMAT=txt` or `both` no longer yields garbled audio-description transcripts; the original file is kept instead, with a note in the output.
+- **Replaced `SKIP_AUTO_GENERATED` with three "include" toggles** for choosing which caption-asset types to download: `INCLUDE_ASR_CAPTIONS` (default true), `INCLUDE_NON_ASR_CAPTIONS` (default true), and `INCLUDE_AUDIO_DESCRIPTIONS` (default false). At least one must be true or the script exits with a clear error. ASR captions are still identified by `AUTO_GENERATED_LABEL`, which is now required only when `INCLUDE_ASR_CAPTIONS` and `INCLUDE_NON_ASR_CAPTIONS` differ (so the two must be told apart).
+
+### Migration
+- If your `.env` from 1.6.0 used `SKIP_AUTO_GENERATED=true`, replace it with `INCLUDE_ASR_CAPTIONS=false` (and set `INCLUDE_AUDIO_DESCRIPTIONS=true` if you also want audio descriptions). `SKIP_AUTO_GENERATED` is no longer read.
+
 ## [1.6.0] - 2026-07-28
 ### Changed
 - Each run now writes into a timestamped subfolder of `output/` named for the processing date and time (e.g. `output/2026-07-28_142530/`), keeping batches separated and preventing repeated runs from overwriting each other. The entry creation date has been dropped from individual filenames (which now start with the entry ID), shortening them.
