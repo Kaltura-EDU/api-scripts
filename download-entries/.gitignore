@@ -1,0 +1,6 @@
+.env
+output/
+kaltura_downloads/
+__pycache__/
+*.pyc
+.DS_Store

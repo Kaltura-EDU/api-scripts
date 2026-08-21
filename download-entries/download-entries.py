@@ -1,6 +1,6 @@
 '''
 Downloads source files from Kaltura media entries into a subfolder named
-"kaltura_downloads", based on one of four search criteria: a tag, category ID,
+"output", based on one of four search criteria: a tag, category ID,
 comma-delimited list of entry IDs, or owner's user ID.
 
 Entries that are not valid downloadable media (e.g., playlists)
@@ -22,8 +22,10 @@ before running the script.
 
 import csv
 import datetime
+import errno
 import getpass
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -42,11 +44,28 @@ import re
 # ---- CONFIGURABLE VARIABLES ----
 # PARTNER_ID = "" DO NOT USE--script will request input
 # ADMIN_SECRET = "" DO NOT USE--script will request input
-DOWNLOAD_FOLDER = "kaltura_downloads"
+DOWNLOAD_FOLDER = "output"
 RETRY_ATTEMPTS = 3
 REMOVE_SUFFIX = True
 MAX_WORKERS = 5
 # -- END CONFIGURABLE VARIABLES --
+
+# Set by any thread that hits "No space left on device" so the main thread can
+# stop the run cleanly instead of grinding through failing entries.
+DISK_FULL = threading.Event()
+
+
+def _abort_disk_full(path):
+    """Print a clear out-of-space message. Files already written are intact."""
+    print(
+        f"\n❌ Ran out of disk space while writing to '{path}'.\n"
+        "   The download has been stopped. Files already saved are intact.\n"
+        "   Free up space and run again — note that macOS Finder's 'Available'\n"
+        "   figure can include 'purgeable' space (caches, cloud-synced files,\n"
+        "   local snapshots) that isn't actually usable right now. You can also\n"
+        "   point DOWNLOAD_FOLDER at another drive at the top of the script.\n"
+    )
+
 
 CSV_HEADERS = [
     "Entry ID", "Name", "Description", "Owner", "Creator ID",
@@ -117,10 +136,37 @@ def get_kaltura_client(partner_id, admin_secret):
     config = KalturaConfiguration(partner_id)
     config.serviceUrl = "https://www.kaltura.com/"
     client = KalturaClient(config)
-    ks = client.session.start(
-        admin_secret, "admin", KalturaSessionType.ADMIN, partner_id,
-        privileges="all:*,disableentitlement"
-    )
+    try:
+        ks = client.session.start(
+            admin_secret, "admin", KalturaSessionType.ADMIN, partner_id,
+            privileges="all:*,disableentitlement"
+        )
+    except KalturaException as e:
+        # START_SESSION_ERROR almost always means a wrong Partner ID or
+        # Admin Secret. Show a clear message instead of a raw traceback.
+        if getattr(e, "code", "") == "START_SESSION_ERROR":
+            print(
+                "\n❌ Could not log in to Kaltura.\n"
+                f"   Partner ID [{partner_id}] and the Admin Secret you "
+                "entered were not accepted.\n\n"
+                "   Please double-check both values and try again:\n"
+                "     • The Partner ID is the numeric account ID.\n"
+                "     • The Admin Secret must be the *Administrator* secret "
+                "(not the User secret),\n"
+                "       copied exactly from KMC → Settings → Integration "
+                "Settings.\n"
+            )
+        else:
+            print(f"\n❌ Could not start Kaltura session: {e}\n")
+        sys.exit(1)
+    except KalturaClientException as e:
+        # Network-level failure (timeout, DNS, connection refused, etc.).
+        print(
+            "\n❌ Could not reach Kaltura to start a session.\n"
+            f"   {e}\n"
+            "   Check your internet connection and try again.\n"
+        )
+        sys.exit(1)
     client.setKs(ks)
     return client
 
@@ -260,6 +306,96 @@ def get_child_entries(client, parent_entry_id):
     return []
 
 
+def _human_size(num_bytes):
+    """Format a byte count for humans: GB at/above 1 GB, otherwise MB, with
+    comma-grouped thousands (e.g. '1,234.56 GB', '812.3 MB')."""
+    gb = num_bytes / (1024 ** 3)
+    if gb >= 1:
+        return f"{gb:,.2f} GB"
+    mb = num_bytes / (1024 ** 2)
+    return f"{mb:,.1f} MB"
+
+
+def _free_space_bytes(folder):
+    """Real free space (bytes) on the filesystem that will hold `folder`,
+    walking up to the nearest existing ancestor since `folder` may not exist
+    yet. This is the honest figure, unlike Finder's purgeable-inclusive one."""
+    path = os.path.abspath(folder)
+    while not os.path.exists(path):
+        parent = os.path.dirname(path)
+        if parent == path:
+            break
+        path = parent
+    return shutil.disk_usage(path).free
+
+
+def _source_size_bytes(client, entry):
+    """Return (bytes, known) for a single entry's source file. `known` is False
+    when no original flavor size is available (e.g. image entries), so callers
+    can report those separately instead of undercounting silently."""
+    flavor_filter = KalturaFlavorAssetFilter()
+    flavor_filter.entryIdEqual = entry.id
+    try:
+        flavors = client.flavorAsset.list(
+            flavor_filter, KalturaFilterPager()
+        ).objects
+    except (KalturaException, KalturaClientException):
+        return 0, False
+    original = next(
+        (f for f in flavors if getattr(f, "isOriginal", False)), None
+    )
+    size_kb = getattr(original, "size", None) if original else None
+    if size_kb:
+        return int(size_kb) * 1024, True  # Kaltura reports flavor size in KB
+    return 0, False
+
+
+def _estimate_tree_bytes(client, entry):
+    """Return (bytes, known_files, unknown_files) for an entry plus every child
+    entry that would be downloaded with it."""
+    total, known, unknown = 0, 0, 0
+    b, ok = _source_size_bytes(client, entry)
+    total += b
+    known += int(ok)
+    unknown += int(not ok)
+    for child in get_child_entries(client, entry.id):
+        cb, cok = _source_size_bytes(client, child)
+        total += cb
+        known += int(cok)
+        unknown += int(not cok)
+    return total, known, unknown
+
+
+_estimate_local = threading.local()
+
+
+def estimate_download_size(client_factory, all_entries):
+    """Pre-flight pass: sum source-file sizes across all entries (and their
+    children) in parallel. Returns (total_bytes, known_files, unknown_files).
+
+    The Kaltura client is NOT thread-safe (its per-request state gets corrupted
+    under concurrent use), so each worker thread gets its own client built from
+    `client_factory`. This pass is advisory, so any per-entry failure is counted
+    as "unknown size" rather than allowed to crash the download run."""
+    def worker(entry):
+        try:
+            client = getattr(_estimate_local, "client", None)
+            if client is None:
+                client = client_factory()
+                _estimate_local.client = client
+            return _estimate_tree_bytes(client, entry)
+        except Exception:
+            return 0, 0, 1
+
+    total, known, unknown = 0, 0, 0
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        for tb, kf, uf in executor.map(worker, all_entries):
+            total += tb
+            known += kf
+            unknown += uf
+    return total, known, unknown
+
+
 def get_flavor_download_url(client, entry):
     # Retrieve the original flavor asset download URL for a given entry.
     flavor_filter = KalturaFlavorAssetFilter()
@@ -334,6 +470,7 @@ def get_file_name(url, entry_id, download_folder):
 
 
 def download_file(url, filename, download_folder):
+    file_path = None
     try:
         response = requests.get(url, stream=True)
         response.raise_for_status()
@@ -346,6 +483,17 @@ def download_file(url, filename, download_folder):
                 file.write(chunk)
     except requests.RequestException as e:
         print(f"❌ Failed to download {filename}: {e}")
+    except OSError as e:
+        if e.errno == errno.ENOSPC:
+            # Out of disk space. Flag the run for a clean stop and remove the
+            # partial file so it isn't mistaken for a complete download.
+            DISK_FULL.set()
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
+        raise
 
 
 def worker(queue, client):
@@ -414,13 +562,36 @@ def process_entry(client, entry, index, csv_writer, download_folder):
             write_csv_row(csv_writer, child, "Skipped (no URL)")
 
 
-def _process_entry_with_retry(client, entry, idx, csv_writer, download_folder):
+_download_local = threading.local()
+
+
+def _thread_client(client_factory):
+    """Return this worker thread's own Kaltura client, creating it on first use.
+    The client is not thread-safe, so each thread must have its own."""
+    client = getattr(_download_local, "client", None)
+    if client is None:
+        client = client_factory()
+        _download_local.client = client
+    return client
+
+
+def _process_entry_with_retry(client_factory, entry, idx, csv_writer, download_folder):
     """Returns True on success, False if all retry attempts are exhausted."""
+    try:
+        client = _thread_client(client_factory)
+    except SystemExit:
+        # client_factory (get_kaltura_client) exits on a failed session start;
+        # in a worker thread, treat that as a failure for this entry instead.
+        print(f"❌ Could not start a Kaltura session for {entry.id}; skipping.")
+        return False
     for attempt in range(RETRY_ATTEMPTS):
         try:
             process_entry(client, entry, idx, csv_writer, download_folder)
             return True
         except Exception as e:
+            if isinstance(e, OSError) and e.errno == errno.ENOSPC:
+                # Retrying won't help on a full disk — stop this entry now.
+                return False
             if attempt < RETRY_ATTEMPTS - 1:
                 print(
                     f"⚠️ Attempt {attempt + 1}/{RETRY_ATTEMPTS}: Error on "
@@ -516,65 +687,122 @@ def main():
         if total_entries == 0:
             print("No entries found.")
         else:
-            if not use_subdirs:
-                print(f"Found {total_entries} entries. Starting downloads...")
+            # Pre-flight: estimate the total source size (entries + children)
+            # and compare it to the real free space on the destination drive.
+            print(f"Found {total_entries} entries. Calculating total download size...")
+            all_entries = [e for _, _, entries in batch_results for e in entries]
+            est_bytes, known_files, unknown_files = estimate_download_size(
+                lambda: get_kaltura_client(partner_id, admin_secret), all_entries
+            )
+            free_bytes = _free_space_bytes(DOWNLOAD_FOLDER)
+            unknown_note = (
+                f" (plus {unknown_files:,} file(s) of unknown size, e.g. images)"
+                if unknown_files else ""
+            )
 
-            caffeinate = None
-            if sys.platform == "darwin":
-                try:
-                    caffeinate = subprocess.Popen(["caffeinate", "-i"])
-                    print("☕ Keeping your Mac awake for the duration of the download.")
-                except FileNotFoundError:
-                    pass
-
-            total_failures = 0
-            try:
-                for label, folder, entries in batch_results:
-                    if not entries:
-                        print(f"No entries found for '{label}'. Skipping.")
-                        continue
-
-                    if use_subdirs:
-                        print(f"\nFound {len(entries)} entries for '{label}'. Downloading to {folder}/...")
-
-                    os.makedirs(folder, exist_ok=True)
-                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
-                    csv_path = os.path.join(folder, f"{timestamp}_download_report.csv")
-
-                    with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
-                        writer = ThreadSafeCSVWriter(csv.writer(csv_file), csv_file)
-                        writer.writerow(CSV_HEADERS)
-                        failures = 0
-                        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                            futures = {
-                                executor.submit(
-                                    _process_entry_with_retry,
-                                    client, entry, idx, writer, folder
-                                ): entry
-                                for idx, entry in enumerate(entries, start=1)
-                            }
-                            for future in as_completed(futures):
-                                try:
-                                    if future.result() is False:
-                                        failures += 1
-                                except Exception as e:
-                                    entry = futures[future]
-                                    print(f"❌ Unexpected error on {entry.id}: {e}")
-                                    failures += 1
-
-                    total_failures += failures
-                    if failures:
-                        print(f"⚠️ Report saved to: {csv_path} ({failures} failure(s))")
-                    else:
-                        print(f"✅ Report saved to: {csv_path}")
-            finally:
-                if caffeinate:
-                    caffeinate.terminate()
-
-            if total_failures:
-                print(f"⚠️ Downloads complete with {total_failures} failure(s). See above for details.")
+            proceed = True
+            if known_files == 0:
+                print(
+                    f"Could not determine the download size in advance{unknown_note}. "
+                    "Beginning..."
+                )
+            elif free_bytes >= est_bytes * 1.1:
+                # Comfortable fit (10% headroom) — just inform and continue.
+                print(
+                    f"This download will take up about {_human_size(est_bytes)}"
+                    f"{unknown_note}, beginning..."
+                )
             else:
-                print("✅ All downloads complete!")
+                # Won't fit, or uncomfortably close — stop and ask first.
+                print(
+                    f"\n⚠️ This download needs about {_human_size(est_bytes)}"
+                    f"{unknown_note}, but only {_human_size(free_bytes)} is free "
+                    "on the destination drive."
+                )
+                print(
+                    "   (macOS Finder may show more space as 'available', but that "
+                    "includes purgeable space that isn't usable right now.)"
+                )
+                proceed = input("   Continue anyway? [y/N] ").strip().lower() in ("y", "yes")
+                if not proceed:
+                    print("Download cancelled. No files were downloaded this run.")
+
+            if proceed:
+                caffeinate = None
+                if sys.platform == "darwin":
+                    try:
+                        caffeinate = subprocess.Popen(["caffeinate", "-i"])
+                        print("☕ Keeping your Mac awake for the duration of the download.")
+                    except FileNotFoundError:
+                        pass
+
+                total_failures = 0
+                disk_full_path = None
+                try:
+                    for label, folder, entries in batch_results:
+                        if not entries:
+                            print(f"No entries found for '{label}'. Skipping.")
+                            continue
+
+                        if use_subdirs:
+                            print(f"\nFound {len(entries)} entries for '{label}'. Downloading to {folder}/...")
+
+                        failures = 0
+                        try:
+                            os.makedirs(folder, exist_ok=True)
+                            timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
+                            csv_path = os.path.join(folder, f"{timestamp}_download_report.csv")
+
+                            with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
+                                writer = ThreadSafeCSVWriter(csv.writer(csv_file), csv_file)
+                                writer.writerow(CSV_HEADERS)
+                                with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                                    futures = {
+                                        executor.submit(
+                                            _process_entry_with_retry,
+                                            lambda: get_kaltura_client(partner_id, admin_secret),
+                                            entry, idx, writer, folder
+                                        ): entry
+                                        for idx, entry in enumerate(entries, start=1)
+                                    }
+                                    for future in as_completed(futures):
+                                        try:
+                                            if future.result() is False:
+                                                failures += 1
+                                        except Exception as e:
+                                            entry = futures[future]
+                                            print(f"❌ Unexpected error on {entry.id}: {e}")
+                                            failures += 1
+
+                            total_failures += failures
+                            if failures:
+                                print(f"⚠️ Report saved to: {csv_path} ({failures} failure(s))")
+                            else:
+                                print(f"✅ Report saved to: {csv_path}")
+                        except OSError as e:
+                            # makedirs or the CSV write itself ran out of space.
+                            if e.errno == errno.ENOSPC:
+                                DISK_FULL.set()
+                            else:
+                                raise
+
+                        # A worker thread (or the batch setup above) hit a full
+                        # disk; stop before starting more batches.
+                        if DISK_FULL.is_set():
+                            disk_full_path = folder
+                            break
+                finally:
+                    if caffeinate:
+                        caffeinate.terminate()
+
+                if disk_full_path is not None:
+                    _abort_disk_full(disk_full_path)
+                    sys.exit(1)
+
+                if total_failures:
+                    print(f"⚠️ Downloads complete with {total_failures} failure(s). See above for details.")
+                else:
+                    print("✅ All downloads complete!")
 
         again = input("\nWould you like to download more entries? [y/N] ").strip().lower()
         if again not in ("y", "yes"):

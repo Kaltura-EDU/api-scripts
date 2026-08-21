@@ -1,5 +1,17 @@
 # Changelog – download-entries.py
 
+## [v2.0.1] – 2026-08-20
+### Added
+- Pre-flight download-size estimate. Before downloading, the script sums the source-file sizes of all matched entries (and their child entries) from the flavor-asset metadata it already fetches, then prints e.g. `This download will take up about 12.34 GB, beginning...` (sizes shown in GB, or MB when under 1 GB, with comma-grouped thousands). It compares the estimate against the real free space on the destination drive and only pauses to ask `Continue anyway? [y/N]` when the download would not comfortably fit (10% headroom); comfortable downloads just print the total and proceed. Entries whose size can't be determined in advance (e.g. images with no source flavor) are reported as a separate "unknown size" count rather than silently undercounted.
+
+### Changed
+- Login failures now show a readable message instead of a raw Python traceback: a wrong Partner ID or Admin Secret (`START_SESSION_ERROR`) prints a clear "could not log in — double-check both values, and use the Administrator (not User) secret" message and exits cleanly, and a network error reaching Kaltura prints a separate "could not reach Kaltura" message.
+- Default download folder renamed from `kaltura_downloads` to `output` (still configurable via the `DOWNLOAD_FOLDER` global). When downloading into per-term subdirectories, those subfolders are now created under `output/`.
+
+### Fixed
+- Thread-safety: the Kaltura client is not safe to share across threads (concurrent use corrupts its per-request state, surfacing as `AttributeError: 'NoneType' object has no attribute 'get'` in `doQueue`). Each worker thread — in both the new size-estimate pass and the download pass — now builds and reuses its own client via `threading.local`, instead of sharing the single main-thread client. The main thread still uses its own client for category resolution and entry fetching.
+- Running out of disk space mid-download now stops the run cleanly with a clear message (including a note that macOS Finder's "Available" figure can include unusable "purgeable" space) instead of a raw `OSError: [Errno 28]` traceback. The partial file being written is removed rather than left behind, entries no longer burn all their retry attempts against a full disk, and remaining category batches are skipped once space runs out. Files already downloaded are left intact.
+
 ## [v2.0.0] – 2026-07-06
 ### Added
 - **Category name search**: new dedicated option to search by category name (separate from category ID). Uses Kaltura's `freeText` API with client-side exact-name filtering to match KMC search behavior. When multiple categories share the same name, the script lists them with their full paths and prompts the user to choose.

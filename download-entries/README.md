@@ -10,7 +10,9 @@ This script allows you to download source files from Kaltura media entries based
 
 All fields accept comma-delimited values, and multiple values are treated as OR. When multiple comma-delimited values are used for tags, category IDs/names, or owner IDs, the script optionally downloads each group's results into a separate subdirectory named after the search term.
 
-The default download folder is `kaltura_downloads`, created in the same directory as the script. You can change this using global variables at the top of the script.
+The default download folder is `output`, created in the same directory as the script. You can change this using global variables at the top of the script.
+
+Before downloading, the script estimates the total size of the source files (including any child entries) and prints it on screen — for example, `This download will take up about 12.34 GB, beginning...`. If the estimate would not comfortably fit in the free space on the destination drive, it warns you and asks whether to continue; otherwise it just shows the total and proceeds. Note that on macOS the free-space figure (like Finder's) can include "purgeable" space that isn't actually usable right now, so treat a tight fit with caution.
 
 Downloads are multithreaded (default: 5 concurrent workers) for fast throughput. The number of workers is configurable via the `MAX_WORKERS` global variable.
 
