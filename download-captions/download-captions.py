@@ -145,6 +145,15 @@ if not (
 # Behavior toggles
 SKIP_CHILD_ENTRIES = _env_bool("SKIP_CHILD_ENTRIES", "true")
 
+# When true, and the query uses multiple search terms (CATEGORY_IDS,
+# CATEGORY_NAMES, TAGS, or OWNER — NOT ENTRY_IDS), each term's results go into
+# its own subfolder of the run folder, named after the term as entered:
+#   output/<timestamp>/<term>/...
+# ENTRY_IDS are always kept flat in the run folder (there's no meaningful
+# per-term grouping for a bare list of entries). When false (default), all
+# results land flat in the run folder regardless of how many terms were used.
+SUBFOLDER_PER_SEARCH_TERM = _env_bool("SUBFOLDER_PER_SEARCH_TERM", "false")
+
 # ---------- Which caption-asset types to download ----------
 # In Kaltura, captions AND audio descriptions are both "caption assets". We
 # sort each asset into one of three buckets and download only the ones whose
@@ -213,8 +222,14 @@ if INCLUDE_ASR_CAPTIONS != INCLUDE_NON_ASR_CAPTIONS and not AUTO_GENERATED_LABEL
         "(e.g. \"(auto-generated)\")."
     )
 
-# Query inputs (priority: ENTRY_IDS > CATEGORY_IDS > TAGS > OWNER)
+# Query inputs (priority: ENTRY_IDS > CATEGORY_IDS/CATEGORY_NAMES > TAGS > OWNER)
 CATEGORY_IDS = os.getenv("CATEGORY_IDS", "").strip()
+# CATEGORY_NAMES is a convenience alternative to CATEGORY_IDS: enter category
+# names and the script resolves each to its ID (see resolve_category_names).
+# Because category names are not guaranteed unique in Kaltura, an ambiguous
+# name stops the script with the candidates listed. Resolved IDs are combined
+# with any CATEGORY_IDS you also set.
+CATEGORY_NAMES = os.getenv("CATEGORY_NAMES", "").strip()
 TAGS = os.getenv("TAGS", "").strip()
 ENTRY_IDS = os.getenv("ENTRY_IDS", "").strip()
 # Prefer OWNER but tolerate a common typo "ONWER"
@@ -254,14 +269,32 @@ def get_kaltura_client(partner_id: str, admin_secret: str) -> KalturaClient:
     config.serviceUrl = SERVICE_URL
     config.requestTimeout = REQUEST_TIMEOUT
     client = KalturaClient(config)
-    ks = call_with_retry(
-        client.session.start,
-        admin_secret,
-        KALTURA_USER,
-        KalturaSessionType.ADMIN,
-        partner_id,
-        privileges="all:*,disableentitlement",
-    )
+    try:
+        ks = call_with_retry(
+            client.session.start,
+            admin_secret,
+            KALTURA_USER,
+            KalturaSessionType.ADMIN,
+            partner_id,
+            privileges="all:*,disableentitlement",
+        )
+    except Exception as e:
+        if getattr(e, "code", "") == "START_SESSION_ERROR":
+            print(
+                "\n❌ Could not log in to Kaltura. Partner ID "
+                f"[{partner_id}] and the Admin Secret were not accepted.\n"
+                "   Double-check both values — the secret must be the "
+                "Administrator secret (not the User secret),\n"
+                "   copied exactly from KMC → Settings → Integration Settings.\n"
+            )
+        elif type(e).__name__ == "KalturaClientException":
+            print(
+                "\n❌ Could not reach Kaltura to start a session.\n"
+                f"   {e}\n   Check your internet connection and try again.\n"
+            )
+        else:
+            print(f"\n❌ Could not start Kaltura session: {e}\n")
+        raise SystemExit(1)
     client.setKs(ks)
     return client
 
@@ -269,6 +302,70 @@ def get_kaltura_client(partner_id: str, admin_secret: str) -> KalturaClient:
 def sanitize_filename(name: str, max_length: int = 100) -> str:
     name = re.sub(r"[^a-zA-Z0-9_-]", "_", name)
     return name[:max_length]
+
+
+def resolve_category_names(client: KalturaClient, names_str: str) -> List[str]:
+    """Resolve comma-delimited category NAMES to a list of category ID strings.
+
+    Uses a freeText search (like KMC's search box) to find candidates, then
+    requires an exact, case-sensitive name match. Category names are NOT
+    guaranteed unique in Kaltura, so:
+      - No exact match  → stop with an error (typo, or wrong capitalization).
+      - Exactly one     → resolve to its ID.
+      - More than one   → the name is ambiguous; stop and list the candidates
+                          (ID + full path) so the user can put the specific
+                          ID in CATEGORY_IDS instead.
+    This script is non-interactive, so an ambiguous name halts rather than
+    prompting.
+    """
+    names = [n.strip() for n in names_str.split(",") if n.strip()]
+    resolved_ids: List[str] = []
+
+    for name in names:
+        cat_filter = KalturaCategoryFilter()
+        cat_filter.freeText = name
+        pager = KalturaFilterPager()
+        pager.pageSize = 500
+        pager.pageIndex = 1
+
+        candidates = []
+        while True:
+            result = call_with_retry(client.category.list, cat_filter, pager)
+            if not getattr(result, "objects", None):
+                break
+            candidates.extend(result.objects)
+            if len(result.objects) < pager.pageSize:
+                break
+            pager.pageIndex += 1
+
+        # freeText matches loosely (tokens/substrings); require an exact name.
+        matches = [c for c in candidates if c.name == name]
+
+        if not matches:
+            raise SystemExit(
+                f"Error: no category found with the exact name '{name}'. "
+                "Check spelling and capitalization (matching is "
+                "case-sensitive), or use CATEGORY_IDS instead."
+            )
+
+        if len(matches) > 1:
+            print(
+                f"Error: the category name '{name}' is not unique — "
+                f"{len(matches)} categories share it:"
+            )
+            for c in matches:
+                print(f"    ID {c.id}  —  {c.fullName}")
+            raise SystemExit(
+                "Category names must be unambiguous. Put the specific ID "
+                "from the list above into CATEGORY_IDS (instead of using "
+                f"CATEGORY_NAMES for '{name}')."
+            )
+
+        cat = matches[0]
+        print(f"Resolved category name '{name}' → {cat.fullName} (ID {cat.id})")
+        resolved_ids.append(str(cat.id))
+
+    return resolved_ids
 
 
 def _is_child_entry(entry) -> bool:
@@ -457,6 +554,17 @@ _KIND_LABELS = {
     "non_asr": "caption",
 }
 
+# The INCLUDE_* variable that would enable each bucket (for the end-of-run hint).
+_KIND_INCLUDE_VAR = {
+    "audio_description": "INCLUDE_AUDIO_DESCRIPTIONS",
+    "asr": "INCLUDE_ASR_CAPTIONS",
+    "non_asr": "INCLUDE_NON_ASR_CAPTIONS",
+}
+
+# Running tally of caption assets skipped because their type was excluded by the
+# INCLUDE_* settings. Used to explain an empty run in the end-of-run summary.
+SKIPPED_BY_KIND = {"audio_description": 0, "asr": 0, "non_asr": 0}
+
 
 def _usage_value(cap) -> str:
     """Return a caption asset's `usage` as a plain string ("0"/"1"/…), or ""
@@ -520,6 +628,7 @@ def get_captions(client: KalturaClient, entry_id: str):
         if include[kind]:
             kept.append(cap)
         else:
+            SKIPPED_BY_KIND[kind] += 1
             print(
                 f"  Skipping {_KIND_LABELS[kind]} "
                 f"'{cap.label}' for entry {entry_id}"
@@ -604,8 +713,8 @@ def _determine_caption_ext(cap, url: str) -> str:
     return ".srt"
 
 
-def download_captions(client: KalturaClient, captions, entry, counter):
-    os.makedirs(RUN_OUTPUT_DIR, exist_ok=True)
+def download_captions(client: KalturaClient, captions, entry, counter, out_dir):
+    os.makedirs(out_dir, exist_ok=True)
     entry_id = entry.id
     entry_title = sanitize_filename(entry.name)
     # Entry (video) creation date, in UTC. Only used if the toggle is on.
@@ -638,18 +747,18 @@ def download_captions(client: KalturaClient, captions, entry, counter):
                 parts.append(label)
             base_name = "_".join(parts)
 
-            out_path = os.path.join(RUN_OUTPUT_DIR, base_name + ext)
+            out_path = os.path.join(out_dir, base_name + ext)
             # If several tracks on one entry would map to the same name
             # (e.g. the label is omitted), add a numeric suffix so none
             # overwrite each other.
             if os.path.exists(out_path):
                 n = 2
                 while os.path.exists(
-                    os.path.join(RUN_OUTPUT_DIR, f"{base_name}_{n}{ext}")
+                    os.path.join(out_dir, f"{base_name}_{n}{ext}")
                 ):
                     n += 1
                 base_name = f"{base_name}_{n}"
-                out_path = os.path.join(RUN_OUTPUT_DIR, base_name + ext)
+                out_path = os.path.join(out_dir, base_name + ext)
 
             try:
                 with (
@@ -711,6 +820,63 @@ def download_captions(client: KalturaClient, captions, entry, counter):
             print(f"Error downloading caption {getattr(cap, 'id', '?')}: {e}")
 
 
+def process_entries(client, entries, counter, out_dir):
+    """Download captions for a list of entries into out_dir, honoring the
+    child-entry skip. `counter` is a one-element list so numbering continues
+    across multiple calls (e.g. one per search-term subfolder)."""
+    for entry in entries:
+        if SKIP_CHILD_ENTRIES and _is_child_entry(entry):
+            print(f"Skipping child entry {entry.id} (parent-linked)")
+            continue
+        caps = get_captions(client, entry.id)
+        if caps:
+            download_captions(client, caps, entry, counter, out_dir)
+        else:
+            print(f"No captions found for entry {entry.id}")
+
+
+def build_jobs(client, method):
+    """Return a list of (out_dir, method, identifier) jobs to run.
+
+    With SUBFOLDER_PER_SEARCH_TERM off (or for ENTRY_IDS, which is always
+    flat), this is a single job writing to the run folder. With it on, each
+    search term becomes its own job writing to output/<timestamp>/<term>/.
+    For CATEGORY_NAMES, the subfolder is named after the name as entered (e.g.
+    the Canvas course ID), while the identifier passed on is the resolved
+    Kaltura category ID.
+    """
+    per_term = SUBFOLDER_PER_SEARCH_TERM and method != "entry_ids"
+
+    def term_dir(term):
+        return os.path.join(RUN_OUTPUT_DIR, sanitize_filename(term))
+
+    if method == "category":
+        id_terms = [c.strip() for c in CATEGORY_IDS.split(",") if c.strip()]
+        name_terms = [n.strip() for n in CATEGORY_NAMES.split(",") if n.strip()]
+        resolved = (
+            resolve_category_names(client, CATEGORY_NAMES) if name_terms else []
+        )
+        if per_term:
+            jobs = [(term_dir(cid), "category", cid) for cid in id_terms]
+            jobs += [
+                (term_dir(name), "category", rid)
+                for name, rid in zip(name_terms, resolved)
+            ]
+            return jobs
+        # Flat: combine explicit IDs + resolved IDs, deduped, one job.
+        seen = set()
+        combined = [
+            c for c in (id_terms + resolved) if not (c in seen or seen.add(c))
+        ]
+        return [(RUN_OUTPUT_DIR, "category", ",".join(combined))]
+
+    identifier = {"entry_ids": ENTRY_IDS, "tag": TAGS, "owner": OWNER}[method]
+    if per_term:
+        terms = [t.strip() for t in identifier.split(",") if t.strip()]
+        return [(term_dir(t), method, t) for t in terms]
+    return [(RUN_OUTPUT_DIR, method, identifier)]
+
+
 def main():
     print("▶ download-captions: starting…")
     if DEBUG:
@@ -736,8 +902,10 @@ def main():
             INCLUDE_CAPTION_LABEL_IN_FILENAMES,
         )
         print("[DEBUG] INCLUDE_CHILD_CATEGORIES:", INCLUDE_CHILD_CATEGORIES)
+        print("[DEBUG] SUBFOLDER_PER_SEARCH_TERM:", SUBFOLDER_PER_SEARCH_TERM)
         print("[DEBUG] ENTRY_IDS:", ENTRY_IDS)
         print("[DEBUG] CATEGORY_IDS:", CATEGORY_IDS)
+        print("[DEBUG] CATEGORY_NAMES:", CATEGORY_NAMES)
         print("[DEBUG] TAGS:", TAGS)
         print("[DEBUG] OWNER:", OWNER)
 
@@ -753,11 +921,12 @@ def main():
     if DEBUG:
         print("[DEBUG] Connected as partner:", PARTNER_ID)
 
-    # Decide method based on which .env variables are populated
-    # (priority: ENTRY_IDS > CATEGORY_IDS > TAGS > OWNER)
+    # Decide method based on which .env variables are populated. The category
+    # method is chosen if CATEGORY_IDS and/or CATEGORY_NAMES is set.
+    # (priority: ENTRY_IDS > CATEGORY_IDS/CATEGORY_NAMES > TAGS > OWNER)
     provided = {
         "entry_ids": bool(ENTRY_IDS),
-        "category": bool(CATEGORY_IDS),
+        "category": bool(CATEGORY_IDS or CATEGORY_NAMES),
         "tag": bool(TAGS),
         "owner": bool(OWNER),
     }
@@ -767,7 +936,7 @@ def main():
     if not method:
         print(
             "Error: No query inputs set. Populate one of ENTRY_IDS,"
-            " CATEGORY_IDS, TAGS, or OWNER in your .env file."
+            " CATEGORY_IDS, CATEGORY_NAMES, TAGS, or OWNER in your .env file."
         )
         return
 
@@ -777,13 +946,6 @@ def main():
             f"Note: Multiple query inputs found in .env."
             f" Using '{method}' and ignoring: {', '.join(extras)}"
         )
-
-    identifier = {
-        "entry_ids": ENTRY_IDS,
-        "category": CATEGORY_IDS,
-        "tag": TAGS,
-        "owner": OWNER,
-    }[method]
 
     if method == "category":
         scope = (
@@ -796,26 +958,53 @@ def main():
             f" (INCLUDE_CHILD_CATEGORIES={INCLUDE_CHILD_CATEGORIES})"
         )
 
-    entries = get_entries(client, method, identifier)
-    print(f"{len(entries)} entries found.")
-    if not entries:
+    # Build the download jobs (one per search-term subfolder, or a single flat
+    # job) and process each. `resolve_category_names` inside build_jobs may
+    # stop the script if a category name is ambiguous.
+    jobs = build_jobs(client, method)
+    per_term = len(jobs) > 1 or (
+        SUBFOLDER_PER_SEARCH_TERM and method != "entry_ids"
+    )
+    print(f"Saving captions under: {RUN_OUTPUT_DIR}/")
+
+    counter = [1]
+    total_entries = 0
+    for out_dir, job_method, identifier in jobs:
+        if per_term:
+            print(f"\n— Search term → {os.path.relpath(out_dir)}/")
+        entries = get_entries(client, job_method, identifier)
+        print(f"{len(entries)} entries found.")
+        total_entries += len(entries)
+        if not entries:
+            continue
+        process_entries(client, entries, counter, out_dir)
+
+    if total_entries == 0:
         print("No entries found. Exiting.")
         return
 
-    print(f"Saving captions to: {RUN_OUTPUT_DIR}/")
+    downloaded = counter[0] - 1
+    print(
+        f"\nCaption download complete. Scanned {total_entries} "
+        f"entr{'y' if total_entries == 1 else 'ies'}; downloaded "
+        f"{downloaded} caption asset{'' if downloaded == 1 else 's'}."
+    )
 
-    counter = [1]
-    for entry in entries:
-        if SKIP_CHILD_ENTRIES and _is_child_entry(entry):
-            print(f"Skipping child entry {entry.id} (parent-linked)")
-            continue
-        caps = get_captions(client, entry.id)
-        if caps:
-            download_captions(client, caps, entry, counter)
-        else:
-            print(f"No captions found for entry {entry.id}")
-
-    print("Caption download complete.")
+    # If nothing downloaded but assets existed and were excluded by type, say
+    # so and point at the toggle that would include them — an empty output
+    # folder otherwise looks like a failure.
+    excluded = sum(SKIPPED_BY_KIND.values())
+    if downloaded == 0 and excluded:
+        print(
+            f"\nNote: {excluded} caption asset(s) were found but excluded by "
+            "your caption-type settings in .env:"
+        )
+        for kind, n in SKIPPED_BY_KIND.items():
+            if n:
+                print(
+                    f"  • {n} {_KIND_LABELS[kind]}(s) — "
+                    f"set {_KIND_INCLUDE_VAR[kind]}=true to include them."
+                )
 
 
 if __name__ == "__main__":

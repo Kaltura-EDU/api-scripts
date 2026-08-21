@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.8.0] - 2026-08-21
+### Added
+- End-of-run summary: prints how many entries were scanned and caption assets downloaded. When nothing is downloaded but assets were found and excluded by the caption-type settings, it lists how many of each type were skipped and names the `INCLUDE_*` variable that would include them — so an empty output folder explains itself instead of looking like a failure.
+- New `SUBFOLDER_PER_SEARCH_TERM` toggle (default false): when true, each search term's results are written to its own subfolder of the run folder, named after the term as entered (e.g. `output/<timestamp>/19452/`). Applies to `CATEGORY_IDS`, `CATEGORY_NAMES`, `TAGS`, and `OWNER`; `ENTRY_IDS` are always kept flat. For `CATEGORY_NAMES`, the subfolder is named after the name typed, not the internal Kaltura category ID it resolves to.
+- New `CATEGORY_NAMES` query filter: enter category **names** instead of numeric `CATEGORY_IDS` and the script resolves each to its ID (freeText search + exact, case-sensitive name match). Because category names aren't guaranteed unique in Kaltura, an ambiguous name stops the script and lists the matching IDs and full paths so you can use the specific ID in `CATEGORY_IDS`; a name with no exact match also stops. Resolved IDs are combined with any `CATEGORY_IDS` you set. Mirrors the category-name support in download-entries.
+
+## [1.7.1] - 2026-08-20
+### Changed
+- Login failures now show a readable message instead of a raw Python traceback: a wrong Partner ID or Admin Secret (`START_SESSION_ERROR`) prints a clear "could not log in — double-check both values, and use the Administrator (not User) secret" message and exits cleanly, and a network error reaching Kaltura prints a separate "could not reach Kaltura" message.
+
 ## [1.7.0] - 2026-07-28
 ### Added
 - **Audio description support.** Kaltura stores captions and audio descriptions as the same "caption asset" type; the script now downloads audio descriptions too. They are identified by the asset's `usage` field (`KalturaCaptionAssetUsage` = 1), which is more reliable than the label — only exactly `usage=1` is treated as an audio description, so unknown/new usage values fail safe as captions.

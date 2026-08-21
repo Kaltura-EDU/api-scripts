@@ -37,7 +37,7 @@ Your `.env` holds your own settings and is git-ignored, so it's never uploaded �
 **Required — the script won't run without these:**
 - `PARTNER_ID` : Your Kaltura partner ID (in KMC under **Settings > Integration Settings**).
 - **Admin secret** : *Not* stored in `.env` — the script prompts you for it at runtime (hidden input) so it's never written to disk.
-- **At least one query filter** — one of `ENTRY_IDS`, `CATEGORY_IDS`, `TAGS`, or `OWNER` (see [Query filters](#query-filters) below) so the script knows which entries to process.
+- **At least one query filter** — one of `ENTRY_IDS`, `CATEGORY_IDS`, `CATEGORY_NAMES`, `TAGS`, or `OWNER` (see [Query filters](#query-filters) below) so the script knows which entries to process.
 - **At least one caption-asset type** — one of `INCLUDE_ASR_CAPTIONS`, `INCLUDE_NON_ASR_CAPTIONS`, or `INCLUDE_AUDIO_DESCRIPTIONS` set to `true` (all default appropriately, so you only need to change these to *narrow* what you download).
 
 **Optional:**
@@ -55,19 +55,21 @@ Your `.env` holds your own settings and is git-ignored, so it's never uploaded �
   - `INCLUDE_CAPTION_NAME_IN_FILENAMES` : Set to `false` to exclude the entry (video) title, e.g. `XSE1_5B_Axial_Compression` (default: true).
   - `INCLUDE_CAPTION_LABEL_IN_FILENAMES` : Set to `false` to exclude the caption track label, e.g. `English` (default: true).
 - `SKIP_CHILD_ENTRIES` : Set to `true` to skip child entries in multi-stream entries (default: false).
+- `SUBFOLDER_PER_SEARCH_TERM` : Set to `true` to give each search term its own subfolder inside the run folder, named after the term as entered — e.g. `output/<timestamp>/19452/…` (default: false, everything flat). Applies to `CATEGORY_IDS`, `CATEGORY_NAMES`, `TAGS`, and `OWNER`; `ENTRY_IDS` are always kept flat. For `CATEGORY_NAMES`, the subfolder uses the name you typed, not the internal Kaltura category ID it resolves to.
 - `DEBUG` : Set to `true` to enable debug output for troubleshooting (default: false).
 - `REQUEST_TIMEOUT` : Seconds before an individual API request times out (default: 120).
 - `MAX_NETWORK_RETRIES` : How many times to retry a call after a transient network error (default: 5).
 - `NETWORK_RETRY_DELAY` : Base seconds between retries; grows linearly as `delay × attempt` (default: 5).
 
 ### Query filters
-Set **at least one** of these to tell the script which entries to process. Each accepts comma-delimited values. Values within a single variable are OR'd (e.g. `TAGS=math,biology` matches either tag); if you set more than one variable, they're prioritized in this order and only the first is used: `ENTRY_IDS` > `CATEGORY_IDS` > `TAGS` > `OWNER`.
+Set **at least one** of these to tell the script which entries to process. Each accepts comma-delimited values. Values within a single variable are OR'd (e.g. `TAGS=math,biology` matches either tag); if you set more than one variable, they're prioritized in this order and only the first is used: `ENTRY_IDS` > `CATEGORY_IDS`/`CATEGORY_NAMES` > `TAGS` > `OWNER`.
 - `ENTRY_IDS` : Specific entry IDs, e.g. `1_ab2cd3ef,1_gh4ij5kl`.
 - `CATEGORY_IDS` : Category IDs (combine with `INCLUDE_CHILD_CATEGORIES` to include subcategories).
+- `CATEGORY_NAMES` : A convenience alternative to `CATEGORY_IDS` — enter category **names** and the script resolves each to its ID. **Category names aren't guaranteed unique in Kaltura**: if a name matches more than one category, the script stops and lists the matching IDs and full paths so you can put the specific ID in `CATEGORY_IDS` instead. Matching is exact and case-sensitive. Any resolved IDs are combined with `CATEGORY_IDS` if you set both.
 - `TAGS` : Entry tags.
 - `OWNER` : The user ID that owns the entries.
 
-Downloaded files are written to a timestamped subfolder of `output/` next to the script (created automatically, and git-ignored so they're never uploaded).
+Downloaded files are written to a timestamped subfolder of `output/` next to the script (created automatically, and git-ignored so they're never uploaded). By default everything from a run lands flat in that one folder; set `SUBFOLDER_PER_SEARCH_TERM=true` to split results into one subfolder per search term.
 
 # How to Run the Script
 1. Download the files in this folder (at minimum **download-captions.py**, **requirements.txt**, and **.env.example**) to your computer. Ensure they end up in the same folder.
