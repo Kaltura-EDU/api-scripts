@@ -1,0 +1,13 @@
+# Secrets — never commit real credentials
+.env
+
+# Local media the user drops in, plus generated reports.
+# Keep the input/ folder itself (via input/.gitkeep) but ignore its contents.
+input/*
+!input/.gitkeep
+output/
+
+# Python / OS cruft
+__pycache__/
+*.py[cod]
+.DS_Store
