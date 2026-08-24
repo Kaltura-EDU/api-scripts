@@ -1,12 +1,16 @@
 # Changelog – upload-entries.py
 
+## [v1.1.0] – 2026-08-24
+### Changed
+- **Throughput readout is now live and dynamic.** Replaced the previous per-file speed (a single MB/s figure printed only when each file finished, which showed nothing while a large file was mid-upload) with a single shared status line that refreshes about twice a second on its own thread: files actively uploading, bytes sent vs. total, percent, a rolling current MB/s, and files completed — e.g. `⬆ 3 uploading · 1.2 GB/3.5 GB (34%) · 148.3 MB/s · 2/8 done`. Bytes are reported to it as each chunk lands, so it works with any number of workers without garbling, and it's suppressed automatically when stdout isn't a terminal (piped/redirected output stays clean). Each file still logs its own average speed on completion, the CSV still records per-file speed, and the end-of-run "effective MB/s" total is unchanged.
+
 ## [v1.0.0] – 2026-08-24
 ### Added
 - Initial release. Bulk-uploads every media file dropped into a local `input/` folder to Kaltura, creating one media entry per file. Batch-wide metadata (owner, tags, description, co-editors, co-publishers, category memberships, conversion profile) is configured once in `.env`.
 - **Reliable large-file uploads via chunked upload.** The Kaltura Python SDK sends an upload as a single streamed request with a 120-second default timeout and silently retries the whole file five times on any timeout, so large videos time out and retry endlessly. This script instead splits each file into `UPLOAD_CHUNK_MB` chunks (default 5 MB) and uploads them with Kaltura's resumable `uploadToken` flow (first chunk `resume=False`; subsequent chunks `resume=True` at their byte offset; final chunk `finalChunk=True`), then creates the entry with the correct media type and binds the uploaded bytes via `media.addContent`. `REQUEST_TIMEOUT` defaults to 600s so a single chunk never times out.
 - **Automatic media-type detection** from file extension (video / audio / image); unrecognized files are listed and skipped rather than uploaded as the wrong type.
 - **Parallel uploads.** Files upload concurrently across a configurable `MAX_WORKERS` pool (default 4). Because the Kaltura client is not thread-safe, each worker builds and reuses its own client/session via `threading.local`, and CSV rows are written through a thread-safe writer. Default is conservative (4) because upload throughput is bound by outbound bandwidth.
-- **Live throughput readout.** A live MB/s figure on the progress bar (single-worker) or on each file's completion line (parallel), plus an "effective MB/s" total for the run. Also recorded per file in the CSV report.
+- **Throughput readout.** Each file's average upload speed is printed on its completion line and recorded in the CSV report; a live per-chunk MB/s figure shows on the single-worker progress bar; and an "effective MB/s" total prints for the whole run. (Made fully dynamic in v1.1.0.)
 - **Safe re-runs.** Successfully uploaded files are moved to `input/_uploaded/` and failures to `input/_failed/` (toggle with `MOVE_ON_SUCCESS`), so re-running never double-uploads.
 - **Category assignment** by numeric ID (`CATEGORY_IDS`) and/or full path (`CATEGORY_NAMES`, resolved to IDs at startup with a disambiguation prompt for duplicate names), applied via `categoryEntry.add`.
 - **`DRY_RUN` preview mode** that lists exactly what would be uploaded (and flags unrecognized files) without creating anything in Kaltura.

@@ -37,6 +37,7 @@ import shutil
 import sys
 import threading
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from os import getenv
@@ -224,6 +225,92 @@ class ThreadSafeCSVWriter:
             self._file.flush()
 
 
+class ProgressReporter:
+    """A single live status line, refreshed on its own thread, that shows the
+    whole batch's progress at once: how many files are actively uploading, bytes
+    sent vs. total, percent, a rolling current MB/s, and files completed.
+
+    One shared line works with any number of workers — a per-worker bar would
+    garble under concurrent \\r writes. Workers report bytes as each chunk lands
+    (add_bytes) and route their own log lines through log(), which clears the
+    status line, prints the message, and lets the next tick redraw it below.
+    The live line is disabled automatically when stdout isn't a terminal."""
+
+    ROLL_WINDOW = 3.0  # seconds of history the rolling speed is averaged over
+
+    def __init__(self, total_bytes, total_files):
+        self.total_bytes = total_bytes
+        self.total_files = total_files
+        self.enabled = sys.stdout.isatty()
+        self._uploaded = 0
+        self._done = 0
+        self._active = 0
+        self._samples = deque()  # (timestamp, cumulative_bytes) for rolling rate
+        self._line_len = 0
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = None
+
+    # -- worker-facing calls --------------------------------------------
+    def add_bytes(self, n):
+        with self._lock:
+            self._uploaded += n
+
+    def start_file(self):
+        with self._lock:
+            self._active += 1
+
+    def finish_file(self):
+        with self._lock:
+            self._active -= 1
+            self._done += 1
+
+    def log(self, msg):
+        """Print a full log line above the live status line, thread-safely."""
+        with self._lock:
+            if self._line_len:
+                print("\r" + " " * self._line_len + "\r", end="")
+                self._line_len = 0
+            print(msg, flush=True)
+
+    # -- monitor thread -------------------------------------------------
+    def _render(self):
+        now = time.monotonic()
+        with self._lock:
+            self._samples.append((now, self._uploaded))
+            while len(self._samples) > 1 and now - self._samples[0][0] > self.ROLL_WINDOW:
+                self._samples.popleft()
+            t0, b0 = self._samples[0]
+            rate = _mbps(self._uploaded - b0, now - t0) if now > t0 else 0.0
+            up, tot, active, done = self._uploaded, self.total_bytes, self._active, self._done
+            pct = int(up * 100 / tot) if tot else 0
+            line = (
+                f"  ⬆ {active} uploading · {_human_size(up)}/{_human_size(tot)} "
+                f"({pct}%) · {rate:.1f} MB/s · {done}/{self.total_files} done"
+            )
+            pad = " " * max(0, self._line_len - len(line))
+            print("\r" + line + pad, end="", flush=True)
+            self._line_len = len(line)
+
+    def _run(self):
+        while not self._stop.wait(0.5):
+            self._render()
+
+    def start(self):
+        if self.enabled:
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=1)
+        with self._lock:
+            if self._line_len:
+                print("\r" + " " * self._line_len + "\r", end="", flush=True)
+                self._line_len = 0
+
+
 # Each worker thread builds and caches its own Kaltura client here, because the
 # client is not thread-safe (its queued per-request state gets corrupted when
 # shared across threads).
@@ -326,7 +413,7 @@ def resolve_category_names(client, names):
 
 
 # ── The chunked upload ────────────────────────────────────────────────
-def upload_file_chunked(client, file_path, show_progress=True):
+def upload_file_chunked(client, file_path, reporter=None):
     """Reserve an upload token and stream the file to Kaltura in chunks using
     the resumable uploadToken flow. Returns the upload token ID.
 
@@ -355,6 +442,8 @@ def upload_file_chunked(client, file_path, show_progress=True):
                 client.uploadToken.upload,
                 token_id, fh, False, True, -1,
             )
+        if reporter:
+            reporter.add_bytes(file_size)
         return token_id, _mbps(file_size, time.monotonic() - start)
 
     offset = 0
@@ -380,17 +469,9 @@ def upload_file_chunked(client, file_path, show_progress=True):
 
             offset += len(chunk)
             first = False
-            if show_progress:
-                pct = min(100, int(offset * 100 / file_size))
-                speed = _mbps(offset, time.monotonic() - start)
-                print(
-                    f"      uploading… {pct:3d}%  "
-                    f"({offset // (1024 * 1024)}/{file_size // (1024 * 1024)} MB)"
-                    f"  {speed:.1f} MB/s   ",
-                    end="\r",
-                )
-    if show_progress:
-        print(" " * 70, end="\r")  # clear the progress line
+            # Feed the live aggregate readout as each chunk lands.
+            if reporter:
+                reporter.add_bytes(len(chunk))
     return token_id, _mbps(file_size, time.monotonic() - start)
 
 
@@ -430,7 +511,7 @@ def assign_categories(client, entry_id, category_ids):
             print(f"      ⚠️ Could not add to category {cat_id}: {e}")
 
 
-def process_file(client, file_path, category_ids, show_progress=True):
+def process_file(client, file_path, category_ids, reporter=None):
     """Upload one file and create its entry.
     Returns (status, entry_id, detail, mbps); mbps is None when nothing was
     actually transferred (skipped or failed before/at the upload)."""
@@ -445,7 +526,7 @@ def process_file(client, file_path, category_ids, show_progress=True):
 
     # 2 & 3) upload the bytes in chunks, then 4) bind them to the entry
     try:
-        token_id, mbps = upload_file_chunked(client, file_path, show_progress)
+        token_id, mbps = upload_file_chunked(client, file_path, reporter)
         resource = KalturaUploadedFileTokenResource()
         resource.token = token_id
         call_with_retry(client.media.addContent, created.id, resource)
@@ -499,13 +580,13 @@ def _mbps(num_bytes, seconds):
     return num_bytes / seconds / (1024 * 1024)
 
 
-def upload_worker(file_path, idx, total, category_ids, writer, show_progress):
+def upload_worker(file_path, idx, total, category_ids, writer, reporter):
     """Run the full per-file job on a worker thread: log, upload, write the CSV
     row, and move the file. Returns the status string for tallying in main().
 
     Each thread uses its own Kaltura client (via thread_client) because the
-    client is not thread-safe. Output is per-line (not a \\r progress bar) so it
-    stays readable when several files upload concurrently."""
+    client is not thread-safe. All console output goes through reporter.log()
+    so per-file lines interleave cleanly above the shared live status line."""
     filename = os.path.basename(file_path)
     media_type = detect_media_type(filename)
     mt_label = MEDIA_TYPE_LABEL.get(media_type, "")
@@ -514,10 +595,11 @@ def upload_worker(file_path, idx, total, category_ids, writer, show_progress):
 
     mbps = None
     if media_type is None:
-        print(f"{label} — ⏭️ Skipped: unrecognized media file type")
+        reporter.log(f"{label} — ⏭️ Skipped: unrecognized media file type")
         status, entry_id, detail = "Skipped", "", "Unrecognized media file type"
     else:
-        print(f"{label} — starting")
+        reporter.log(f"{label} — starting")
+        reporter.start_file()
         try:
             client = thread_client()
         except SystemExit:
@@ -530,18 +612,20 @@ def upload_worker(file_path, idx, total, category_ids, writer, show_progress):
         else:
             try:
                 status, entry_id, detail, mbps = process_file(
-                    client, file_path, category_ids, show_progress
+                    client, file_path, category_ids, reporter
                 )
             except Exception as e:
                 status, entry_id, detail = "Failed", "", str(e)
+        finally:
+            reporter.finish_file()
 
         if status == "Uploaded":
             speed = f"  ({mbps:.1f} MB/s)" if mbps else ""
-            print(f"{label} — ✅ Created entry {entry_id}{speed}")
+            reporter.log(f"{label} — ✅ Created entry {entry_id}{speed}")
         elif status == "Skipped":
-            print(f"{label} — ⏭️ Skipped: {detail}")
+            reporter.log(f"{label} — ⏭️ Skipped: {detail}")
         else:
-            print(f"{label} — ❌ Failed: {detail}")
+            reporter.log(f"{label} — ❌ Failed: {detail}")
 
     writer.writerow([
         filename, mt_label, status, entry_id,
@@ -558,7 +642,7 @@ def upload_worker(file_path, idx, total, category_ids, writer, show_progress):
             elif status == "Failed":
                 _move_into(file_path, FAILED_DIR)
         except OSError as e:
-            print(f"      ⚠️ Could not move '{filename}' after upload: {e}")
+            reporter.log(f"      ⚠️ Could not move '{filename}' after upload: {e}")
 
     return status
 
@@ -613,10 +697,6 @@ def main():
     all_files = recognized + unrecognized
     total = len(all_files)
     workers = min(MAX_WORKERS, len(recognized)) or 1
-    # The inline % progress bar (which rewrites one line with \r) only makes
-    # sense with a single uploader; with several it would garble, so parallel
-    # runs use clean per-file lines instead.
-    show_progress = workers == 1
     print(
         f"\nUploading {len(recognized)} file(s) with {workers} "
         f"worker{'s' if workers != 1 else ''}…\n"
@@ -627,29 +707,40 @@ def main():
     uploaded_bytes = 0
     run_start = time.monotonic()
 
+    # One shared live status line for the whole batch, refreshed on its own
+    # thread; workers report bytes as chunks land and log through it.
+    reporter = ProgressReporter(
+        total_bytes=sum(sizes[f] for f in recognized),
+        total_files=len(recognized),
+    )
+
     with open(report_path, "w", newline="", encoding="utf-8") as csv_file:
         writer = ThreadSafeCSVWriter(csv.writer(csv_file), csv_file)
         writer.writerow(CSV_HEADERS)
 
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(
-                    upload_worker, file_path, idx, total,
-                    category_ids, writer, show_progress,
-                ): file_path
-                for idx, file_path in enumerate(all_files, start=1)
-            }
-            for future in as_completed(futures):
-                file_path = futures[future]
-                try:
-                    status = future.result()
-                except Exception as e:
-                    print(f"      ❌ Unexpected error on "
-                          f"{os.path.basename(file_path)}: {e}")
-                    status = "Failed"
-                counts[status] = counts.get(status, 0) + 1
-                if status == "Uploaded":
-                    uploaded_bytes += sizes.get(file_path, 0)
+        reporter.start()
+        try:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {
+                    executor.submit(
+                        upload_worker, file_path, idx, total,
+                        category_ids, writer, reporter,
+                    ): file_path
+                    for idx, file_path in enumerate(all_files, start=1)
+                }
+                for future in as_completed(futures):
+                    file_path = futures[future]
+                    try:
+                        status = future.result()
+                    except Exception as e:
+                        reporter.log(f"      ❌ Unexpected error on "
+                                     f"{os.path.basename(file_path)}: {e}")
+                        status = "Failed"
+                    counts[status] = counts.get(status, 0) + 1
+                    if status == "Uploaded":
+                        uploaded_bytes += sizes.get(file_path, 0)
+        finally:
+            reporter.stop()
 
     elapsed = time.monotonic() - run_start
     print(

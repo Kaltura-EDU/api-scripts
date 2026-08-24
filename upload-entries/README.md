@@ -83,10 +83,14 @@ the highlights:
 - **A CSV report** is written to `output/` after every run, with one row per
   file: status, new entry ID, owner, tags, categories, size, average upload
   speed, and any error.
-- **Live speed readout.** During a run you'll see the throughput as it happens —
-  a live MB/s figure on the progress bar (single-worker) or on each file's
-  completion line (parallel), plus an "effective MB/s" total at the end. Handy
-  for tuning `UPLOAD_CHUNK_MB` / `MAX_WORKERS` to your connection.
+- **Live speed readout.** A single status line at the bottom refreshes about
+  twice a second while the batch runs, showing how many files are uploading,
+  bytes sent vs. total, percent, a rolling **current MB/s**, and files completed
+  — e.g. `⬆ 3 uploading · 1.2 GB/3.5 GB (34%) · 148.3 MB/s · 2/8 done`. Each
+  file also logs its own average speed as it finishes, and an "effective MB/s"
+  total prints at the end. Handy for tuning `UPLOAD_CHUNK_MB` / `MAX_WORKERS` to
+  your connection. (The live line is shown only in an interactive terminal; when
+  output is piped or redirected it's suppressed so logs stay clean.)
 
 ---
 
