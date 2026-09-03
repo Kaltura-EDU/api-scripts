@@ -1,6 +1,6 @@
 # Kaltura API Scripts
 
-This is a collection of scripts written to provide reporting and bulk actions for the University of Alaska's Kaltura account, mostly using Python and the Kaltura API Client.
+This is a collection of scripts designed to provide reporting and bulk actions for the University of Alaska's Kaltura account, mostly using Python and the Kaltura API Client. Google Gemini prompts were used to create the scripts.
 
 ## Requirements and Credentials
 These scripts use a common requirements.txt for loading all the dependencies needed. Note that not all  
@@ -88,6 +88,13 @@ Additional: This script applies a Retention-related Category ID, to entries that
 Last Updated: 2026-06-23 14:58:42
 Summary:
 Connects to the Kaltura API using administrative credentials to verify and trigger the recreation of flavor ID 487041 "Basic/Small - WEB/MBL (H264/400)" for targeted media entries. Supports single manual entries or batch CSV processing.
+
+## Kaltura Report - Live Stream Entry Detail, KR-lsed.py
+Last Updated: 2026-08-06 15:41:30
+Summary: This script generates an admin session via the Kaltura API to retrieve and report details 
+(userId, name, createdAt, lastBroadcast) for live stream entries. It supports both single entry 
+verification and multithreaded batch processing from a CSV file. It also retrieves recordStatus 
+and conditionally fetches recording quantities and IDs using baseEntry.list.
 
 ## Created and Managed by:
 Sofia Fronzuto, safronzuto@alaska.edu  
