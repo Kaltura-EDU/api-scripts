@@ -1,6 +1,6 @@
 # Kaltura API Scripts
 
-This is a collection of scripts written to provide reporting and bulk actions for the University of Alaska's Kaltura account, using Python and the Kaltura API Client.
+This is a collection of scripts written to provide reporting and bulk actions for the University of Alaska's Kaltura account, mostly using Python and the Kaltura API Client.
 
 ## Requirements and Credentials
 These scripts use a common requirements.txt for loading all the dependencies needed. Note that not all  
@@ -44,7 +44,7 @@ CSV download link to the user associated with the session (ADMIN_ID in .env).
 ## Kaltura Report - AD Processing for User Status Updates, KR-ADP.ps1
 Last Updated: 2026-07-22 15:40:00
 SUMMARY:
-This script prompts for a CSV file of users, checks their existence and object class (inetOrgPerson) in Active Directory using a multi-threaded Runspace Pool. It compares the Kaltura_Status from the input against the calculated AD_Status to determine if an account needs to be Deactivated, Reactivated, or Transferred.
+This PowerShell script prompts for a CSV file of users, checks their existence and object class (inetOrgPerson) in Active Directory using a multi-threaded Runspace Pool. It compares the Kaltura_Status from the input against the calculated AD_Status to determine if an account needs to be Deactivated, Reactivated, or Transferred.
 
 Generates three reports: 
   1. A full report with processing summary, listing all usernames processed.
