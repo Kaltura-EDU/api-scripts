@@ -76,7 +76,7 @@ Python 3.10 or newer.
 | `ENTRY_ID_COLUMN_HEADER` | If using CSV | Column header name for entry IDs in the CSV |
 | `DRY_RUN` | No | Set to `true` to preview without deleting (default: `true`) |
 | `LOOKUP_BEFORE_ACTION` | No | Set to `false` to skip metadata lookup (default: `true`) |
-| `MAX_WORKERS` | No | Number of concurrent API calls (default: `1`; `10` recommended for large batches) |
+| `MAX_WORKERS` | No | Concurrent API calls (default: `1`; `10` recommended). Not the delete-speed dial — see `DELETE_RATE_PER_SEC`. It governs the unpaced lookup phase, and provides the headroom the paced delete phase needs (roughly `DELETE_RATE_PER_SEC` × call latency) |
 | `DELETE_RATE_PER_SEC` | No | Calls per second, to stay under Kaltura's delete throttle (default: `2.5`; `0` disables pacing) |
 | `BLOCKED_RETRIES` | No | Extra attempts for an entry rejected with `ACTION_BLOCKED` (default: `4`) |
 | `BLOCKED_RETRY_DELAY` | No | Base seconds between those retries; grows linearly (default: `10`) |
