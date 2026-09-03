@@ -23,6 +23,7 @@ Most scripts have a Session Key expiration of 12 hours, and the script ends the 
 All scripts that perform updates/changes (KU) have a DryRun mode (default), to be able to check for and resolve errors before doing the actual changes.
 
 Scripts are designed with entire processes in mind to support both User Management and Media Retention policies. Actionable csv reports are generated where they can be used by other processes to streamline and simplify, while not over-complicating a singular script beyond its intended purpose. e.g.: User Management script outputs can be used as Media Retention script inputs.
+
 My current monthly process is:
 1. use KR-uxe.py to generate a list of all users in our account
 2. use KR-uss.py to update that user list with their current status in Kaltura.
