@@ -1,0 +1,6 @@
+KalturaApiClient
+python-dotenv
+certifi
+lxml
+tqdm
+pandas
