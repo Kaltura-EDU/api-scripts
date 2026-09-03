@@ -1,5 +1,36 @@
 # Changelog for delete-entries.py
 
+### [1.2.0] - 2026-09-03
+
+#### Added
+* Transient network failures (timeouts, dropped connections) are now retried automatically with linear backoff, via the standard `call_with_retry` helper. Tunable with the new `MAX_NETWORK_RETRIES` (default `5`) and `NETWORK_RETRY_DELAY` (default `5`) variables. Previously a single blip mid-run marked an entry `FAILED: connection error` with no second attempt.
+* The admin session is now started immediately after the secret prompt, so a wrong secret or partner ID fails fast with the readable login message. Previously the session was built lazily inside worker threads, where the `SystemExit` it raises escaped the top-level `except Exception` handler and printed a raw traceback — once per worker.
+
+* API messages and entry names are now XML-unescaped before display. An error read `Action &quot;delete&quot; in service &quot;baseentry&quot; is blocked`; it now reads `Action "delete" in service "baseentry" is blocked`. This also applies to the `entry_name` column, so a name like `Ben & Jerry's` no longer lands in the CSV as `Ben &amp; Jerry&#39;s`.
+* Runs now end with a summary that groups failures by error code, with the message shown once per code and a wrapped hint for codes that have a known next step (`ACTION_BLOCKED`, `ENTRY_ID_NOT_FOUND`). A run where 162 entries fail identically no longer requires scrolling back through 162 identical lines to see what happened.
+
+* Requests are now paced at `DELETE_RATE_PER_SEC` (default `2.5`) by a shared rate limiter, and entries rejected with `ACTION_BLOCKED` are retried with linear backoff (`BLOCKED_RETRIES`, `BLOCKED_RETRY_DELAY`). Kaltura throttles deletes and rejects the excess rather than queueing it: on a production account, a run attempting ~21.6 calls/sec landed only 14.5% of its deletes, with successes holding at ~3.1-3.6/sec and spread evenly across the run — the signature of a throttle, not of undeletable entries. The same entry was observed returning `ACTION_BLOCKED` in one run and deleting normally a minute later. Pacing below the ceiling lets nearly every call land on the first pass instead of requiring repeated re-runs.
+
+* A `delete` whose response is lost to a network timeout is no longer reported as a failure. The call is not idempotent: the lost request can reach Kaltura and delete the entry before the response times out, so the automatic retry then gets `ENTRY_ID_NOT_FOUND` for an entry that was successfully deleted. That combination — a network retry on this call, followed by `ENTRY_ID_NOT_FOUND` — is now recorded as `DELETED (first attempt timed out)` rather than `FAILED`, so the operator is not sent chasing an entry that is already gone. A genuine bad ID, with no retry involved, still reports as a failure. Observed once in a 162-entry run on 2026-09-03.
+
+#### Removed
+* `FORCE_DELETE` has been removed from the script, `.env.example` and the README. It passed `force=1` to `baseEntry.delete`, but no delete action in the Kaltura API accepts a `force` parameter — `baseEntry.delete` takes only `entryId`, and the only `force*` parameters in the SDK are `forceProxy` on `serve`/`getUrl`. Kaltura silently discarded the field, so the flag never had any effect, and the documentation claiming it clears `ACTION_BLOCKED` entries was incorrect. Removing it is not a behavior change.
+
+#### Changed
+* Entry IDs are now resolved *before* the admin secret prompt, so a missing `ENTRY_IDS` / wrong `ENTRY_ID_COLUMN_HEADER` is caught before the user types a secret. An empty CSV column now names the file and column header instead of reporting "no valid entries to delete".
+* Duplicate entry IDs in the input are collapsed (order preserved) and the count reported; previously a repeated ID was processed twice, with the second pass logging a spurious failure.
+* Non-2xx HTTP responses (gateway errors, HTML error pages) are now treated as failures. Previously such a response carried no Kaltura error block, so an entry read as found-but-empty and was passed through to deletion.
+* Kaltura error codes are now read only from the response's `<error>` block, so a field of the entry itself can never be mistaken for an error code.
+* `force=1` is now sent only with `delete`; it is not a parameter of `recycle`.
+* The SDK session request now honors `REQUEST_TIMEOUT_SEC` (`config.requestTimeout`), which previously applied only to the raw entry calls.
+* `KalturaClientException` is now caught by class rather than by comparing `type(e).__name__` to a string.
+* `Ctrl-C` now exits with a clean `[ABORTED] Interrupted by user.` message, and unhandled errors exit non-zero instead of returning success.
+
+### [1.1.1] - 2026-08-20
+
+#### Changed
+* Login failures now show a readable message instead of a raw Python traceback: a wrong Partner ID or Admin Secret (`START_SESSION_ERROR`) prints a clear "could not log in — double-check both values, and use the Administrator (not User) secret" message and exits cleanly, and a network error reaching Kaltura prints a separate "could not reach Kaltura" message.
+
 ### [1.1.0] - 2026-07-01
 
 #### Changed
