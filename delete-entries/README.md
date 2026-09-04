@@ -29,6 +29,7 @@ This script **permanently deletes entries** and cannot be undone. They are put i
 - Supports concurrent API calls via `MAX_WORKERS` for faster processing of large batches
 - `DRY_RUN=true` writes a preview CSV without making any API calls
 - `LOOKUP_BEFORE_ACTION=false` skips metadata lookup and goes straight to deletion (faster, but result CSV columns will be blank)
+- Numbers each line of the deletion phase (`[ 42/162]`) so progress is visible at a glance
 - Outputs a timestamped CSV report with entry ID, name, owner, duration, and status
 - Ends with a summary grouping failures by error code, with guidance for common ones
 

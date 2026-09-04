@@ -1,5 +1,11 @@
 # Changelog for delete-entries.py
 
+### [1.2.1] - 2026-09-04
+
+#### Changed
+* Every line of the delete/recycle phase is now numbered — `[ 42/162] [DELETED] Entry 1_abc123` — so someone glancing at a run in progress can see how far along it is, rather than a wall of entries scrolling past with no sense of position. Numbers are reserved under a lock as each entry finishes, so they stay exact and gap-free with `MAX_WORKERS` above 1, and they follow completion order rather than input order. `[THROTTLED]` lines are deliberately left unnumbered, since that entry has not finished yet, and are indented to keep the counter column aligned.
+* Removed the periodic `N/total processed...` tally from the action phase, now redundant when every line carries its own position. The lookup phase keeps its tally, as successful lookups print nothing.
+
 ### [1.2.0] - 2026-09-03
 
 #### Added

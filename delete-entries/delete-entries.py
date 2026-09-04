@@ -230,6 +230,33 @@ class RateLimiter:
 _rate_limiter = RateLimiter(DELETE_RATE_PER_SEC)
 
 
+class ProgressCounter:
+    """Numbers each entry as workers finish it, e.g. "[ 42/162]".
+
+    Workers finish out of order, so the number is reserved under a lock at
+    the moment an entry is done rather than derived from its position in
+    the input. It answers "how far along is this run", which is what
+    someone glancing at a scrolling terminal wants to know.
+    """
+
+    def __init__(self, total: int):
+        self.total = total
+        self.width = len(str(total))
+        self._done = 0
+        self._lock = threading.Lock()
+
+    def next_label(self) -> str:
+        with self._lock:
+            self._done += 1
+            done = self._done
+        return f"[{done:>{self.width}}/{self.total}]"
+
+    @property
+    def blank(self) -> str:
+        """Same width as a label, to indent lines that have no number."""
+        return " " * (2 * self.width + 3)
+
+
 _thread_local = threading.local()
 
 
@@ -401,6 +428,7 @@ def action_one(
     row: Dict,
     action: str,
     action_log: str,
+    counter: "ProgressCounter",
 ) -> Dict:
     eid = row["entry_id"]
     if row.get("status") != "FOUND":
@@ -417,13 +445,16 @@ def action_one(
             # this entry is undeletable. Back off and try it again.
             if code == "ACTION_BLOCKED" and attempt < BLOCKED_RETRIES:
                 delay = BLOCKED_RETRY_DELAY * (attempt + 1)
+                # No number yet: this entry is not finished. Indent to
+                # the label width so the counter column stays aligned.
                 print(
-                    f"[THROTTLED] Entry {eid} blocked; retry"
-                    f" {attempt + 1}/{BLOCKED_RETRIES} in {delay}s"
+                    f"{counter.blank} [THROTTLED] Entry {eid} blocked;"
+                    f" retry {attempt + 1}/{BLOCKED_RETRIES} in {delay}s"
                 )
                 time.sleep(delay)
                 continue
             break
+        label = counter.next_label()
         if code == "ENTRY_ID_NOT_FOUND" and getattr(
             _thread_local, "retried", False
         ):
@@ -434,23 +465,24 @@ def action_one(
             # this as a failure would send the operator chasing an entry
             # that is already gone.
             print(
-                f"[{action_log}] Entry {eid}"
+                f"{label} [{action_log}] Entry {eid}"
                 " (first attempt timed out; retry confirmed it gone)"
             )
             out["status"] = f"{action_log} (first attempt timed out)"
         elif code:
             print(
-                f"[SKIPPED] Entry {eid} could not be"
+                f"{label} [SKIPPED] Entry {eid} could not be"
                 f" {action_log.lower()} ({code}): {message}"
             )
             out["status"] = f"FAILED: {code}"
             out["_message"] = message
         else:
-            print(f"[{action_log}] Entry {eid}")
+            print(f"{label} [{action_log}] Entry {eid}")
             out["status"] = action_log
     except requests.RequestException as e:
         print(
-            f"[SKIPPED] Entry {eid} could not be {action_log.lower()}: {e}"
+            f"{counter.next_label()} [SKIPPED] Entry {eid} could not be"
+            f" {action_log.lower()}: {e}"
         )
         out["status"] = "FAILED: connection error"
         out["_message"] = str(e)
@@ -633,7 +665,7 @@ def main():
         writer.writerows(skipped_rows)
 
     write_lock = threading.Lock()
-    completed = 0
+    counter = ProgressCounter(total_found)
     processed_count = 0
     failure_counts: Dict[str, int] = {}
     failure_messages: Dict[str, str] = {}
@@ -641,13 +673,12 @@ def main():
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = {
             pool.submit(
-                action_one, row, action, action_log
+                action_one, row, action, action_log, counter
             ): row["entry_id"]
             for row in found_rows
         }
         for fut in as_completed(futures):
             result = fut.result()
-            completed += 1
             status = result.get("status", "")
             if status.startswith(action_log):
                 processed_count += 1
@@ -663,8 +694,6 @@ def main():
                 ) as f:
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writerow(row_out)
-            if completed % 100 == 0 or completed == total_found:
-                print(f"  {completed}/{total_found} processed...")
 
     print(
         f"\n[INFO] {processed_count} entries successfully"
