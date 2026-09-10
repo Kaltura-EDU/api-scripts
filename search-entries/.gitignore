@@ -1,0 +1,13 @@
+# Secrets & environment-specific config — never commit
+.env
+
+# Generated reports — contain real owner IDs and entry metadata
+output/
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
