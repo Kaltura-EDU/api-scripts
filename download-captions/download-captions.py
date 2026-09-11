@@ -154,6 +154,13 @@ SKIP_CHILD_ENTRIES = _env_bool("SKIP_CHILD_ENTRIES", "true")
 # results land flat in the run folder regardless of how many terms were used.
 SUBFOLDER_PER_SEARCH_TERM = _env_bool("SUBFOLDER_PER_SEARCH_TERM", "false")
 
+# When true, files are sorted by type into subfolders — captions/,
+# transcripts/, and audio-descriptions/ — so you don't have to separate them
+# by extension afterward. Composes with SUBFOLDER_PER_SEARCH_TERM (the type
+# folders nest inside each search-term folder). When false (default), all
+# files share one folder.
+SUBFOLDER_PER_FILE_TYPE = _env_bool("SUBFOLDER_PER_FILE_TYPE", "false")
+
 # ---------- Which caption-asset types to download ----------
 # In Kaltura, captions AND audio descriptions are both "caption assets". We
 # sort each asset into one of three buckets and download only the ones whose
@@ -565,6 +572,24 @@ _KIND_INCLUDE_VAR = {
 # INCLUDE_* settings. Used to explain an empty run in the end-of-run summary.
 SKIPPED_BY_KIND = {"audio_description": 0, "asr": 0, "non_asr": 0}
 
+# Folder names used when SUBFOLDER_PER_FILE_TYPE is on. Keys are artifact kinds:
+# 'caption' = original caption file, 'transcript' = converted .txt,
+# 'audio_description' = audio-description file.
+_FILE_TYPE_DIRS = {
+    "caption": "captions",
+    "transcript": "transcripts",
+    "audio_description": "audio-descriptions",
+}
+
+
+def _type_subdir(base_dir: str, artifact: str) -> str:
+    """Directory a given artifact kind is written to. With
+    SUBFOLDER_PER_FILE_TYPE off this is just base_dir; on, it's a per-type
+    subfolder of base_dir (captions/ transcripts/ audio-descriptions/)."""
+    if not SUBFOLDER_PER_FILE_TYPE:
+        return base_dir
+    return os.path.join(base_dir, _FILE_TYPE_DIRS[artifact])
+
 
 def _usage_value(cap) -> str:
     """Return a caption asset's `usage` as a plain string ("0"/"1"/…), or ""
@@ -636,13 +661,13 @@ def get_captions(client: KalturaClient, entry_id: str):
     return kept
 
 
-def convert_caption_to_txt(caption_path: str, caption_ext: str) -> str:
+def convert_caption_to_txt(
+    caption_path: str, caption_ext: str, txt_path: str
+) -> str:
     """
-    Convert a caption file (.srt or .vtt) to a plain-text .txt transcript.
-    Returns the txt path.
+    Convert a caption file (.srt or .vtt) to a plain-text .txt transcript,
+    written to txt_path. Returns txt_path on success, "" on failure.
     """
-    base, _ = os.path.splitext(caption_path)
-    txt_path = base + ".txt"
     try:
         if caption_ext.lower() == ".srt":
             # Use pysrt for robust SRT parsing
@@ -734,6 +759,14 @@ def download_captions(client: KalturaClient, captions, entry, counter, out_dir):
                 classify_caption_asset(cap) == "audio_description"
             )
 
+            # OUTPUT_FORMAT (srt/txt/both) governs CAPTIONS only. TXT
+            # conversion strips timecodes to make a readable transcript —
+            # meaningful for captions, but not for audio descriptions, where
+            # the timing IS the content. So audio descriptions are always kept
+            # in their original format and never converted.
+            do_txt = SAVE_TXT and not is_audio_description
+            keep_original = SAVE_SRT or is_audio_description
+
             # Assemble the filename. Entry ID is always present; the date,
             # entry title, and label are each optional (at least one of the
             # three is guaranteed true by the startup check).
@@ -747,18 +780,31 @@ def download_captions(client: KalturaClient, captions, entry, counter, out_dir):
                 parts.append(label)
             base_name = "_".join(parts)
 
-            out_path = os.path.join(out_dir, base_name + ext)
+            # Choose the directory for the ORIGINAL file by artifact type.
+            # Audio descriptions → audio-descriptions/. A caption we're keeping
+            # → captions/. A caption we'll delete after making a transcript is
+            # staged in transcripts/ so no empty captions/ folder is left.
+            if is_audio_description:
+                orig_dir = _type_subdir(out_dir, "audio_description")
+            elif keep_original:
+                orig_dir = _type_subdir(out_dir, "caption")
+            else:
+                orig_dir = _type_subdir(out_dir, "transcript")
+            os.makedirs(orig_dir, exist_ok=True)
+
+            out_path = os.path.join(orig_dir, base_name + ext)
             # If several tracks on one entry would map to the same name
             # (e.g. the label is omitted), add a numeric suffix so none
-            # overwrite each other.
+            # overwrite each other. The suffixed base_name is reused for the
+            # transcript so the two stay paired.
             if os.path.exists(out_path):
                 n = 2
                 while os.path.exists(
-                    os.path.join(out_dir, f"{base_name}_{n}{ext}")
+                    os.path.join(orig_dir, f"{base_name}_{n}{ext}")
                 ):
                     n += 1
                 base_name = f"{base_name}_{n}"
-                out_path = os.path.join(out_dir, base_name + ext)
+                out_path = os.path.join(orig_dir, base_name + ext)
 
             try:
                 with (
@@ -772,16 +818,12 @@ def download_captions(client: KalturaClient, captions, entry, counter, out_dir):
                 # to 9,999 downloaded caption assets.
                 print(f"{counter[0]:>4}. Downloaded:\t{out_path}")
 
-                # OUTPUT_FORMAT (srt/txt/both) governs CAPTIONS only. TXT
-                # conversion strips timecodes to make a readable transcript —
-                # meaningful for captions, but not for audio descriptions,
-                # where the timing IS the content. So audio descriptions are
-                # always kept in their original format and never converted.
-                do_txt = SAVE_TXT and not is_audio_description
-                keep_original = SAVE_SRT or is_audio_description
-
                 if do_txt:
-                    txt_path = convert_caption_to_txt(out_path, ext)
+                    txt_dir = _type_subdir(out_dir, "transcript")
+                    os.makedirs(txt_dir, exist_ok=True)
+                    txt_path = convert_caption_to_txt(
+                        out_path, ext, os.path.join(txt_dir, base_name + ".txt")
+                    )
                     if txt_path:
                         print(f"      Converted to TXT:\t{txt_path}")
                     else:
@@ -903,6 +945,7 @@ def main():
         )
         print("[DEBUG] INCLUDE_CHILD_CATEGORIES:", INCLUDE_CHILD_CATEGORIES)
         print("[DEBUG] SUBFOLDER_PER_SEARCH_TERM:", SUBFOLDER_PER_SEARCH_TERM)
+        print("[DEBUG] SUBFOLDER_PER_FILE_TYPE:", SUBFOLDER_PER_FILE_TYPE)
         print("[DEBUG] ENTRY_IDS:", ENTRY_IDS)
         print("[DEBUG] CATEGORY_IDS:", CATEGORY_IDS)
         print("[DEBUG] CATEGORY_NAMES:", CATEGORY_NAMES)

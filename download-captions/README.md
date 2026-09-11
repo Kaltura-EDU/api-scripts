@@ -56,6 +56,7 @@ Your `.env` holds your own settings and is git-ignored, so it's never uploaded �
   - `INCLUDE_CAPTION_LABEL_IN_FILENAMES` : Set to `false` to exclude the caption track label, e.g. `English` (default: true).
 - `SKIP_CHILD_ENTRIES` : Set to `true` to skip child entries in multi-stream entries (default: false).
 - `SUBFOLDER_PER_SEARCH_TERM` : Set to `true` to give each search term its own subfolder inside the run folder, named after the term as entered — e.g. `output/<timestamp>/19452/…` (default: false, everything flat). Applies to `CATEGORY_IDS`, `CATEGORY_NAMES`, `TAGS`, and `OWNER`; `ENTRY_IDS` are always kept flat. For `CATEGORY_NAMES`, the subfolder uses the name you typed, not the internal Kaltura category ID it resolves to.
+- `SUBFOLDER_PER_FILE_TYPE` : Set to `true` to sort output by type into `captions/`, `transcripts/`, and `audio-descriptions/` subfolders (default: false), so you don't have to separate them by file extension afterward. Composes with `SUBFOLDER_PER_SEARCH_TERM` — the type folders nest inside each search-term folder, e.g. `output/<timestamp>/19452/captions/…` and `output/<timestamp>/19452/transcripts/…`.
 - `DEBUG` : Set to `true` to enable debug output for troubleshooting (default: false).
 - `REQUEST_TIMEOUT` : Seconds before an individual API request times out (default: 120).
 - `MAX_NETWORK_RETRIES` : How many times to retry a call after a transient network error (default: 5).
