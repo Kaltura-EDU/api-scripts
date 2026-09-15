@@ -1,5 +1,10 @@
 # Changelog – download-entries.py
 
+## [v2.0.2] – 2026-09-15
+### Fixed
+- Filenames with a colon (or other filesystem-reserved characters) no longer produce truncated files with no extension. Server-supplied names are now sanitized the way the KMC sanitizes them — reserved characters (`< > : " / \ | ? *` and control characters) are stripped while the extension is preserved — so the file writes correctly on macOS, Windows, and external/network drives (exFAT/SMB) where a colon is illegal.
+- Content-Disposition parsing is now done with the stdlib email header parser instead of a naive string split. This correctly handles both the quoted `filename="..."` form and the RFC 5987 `filename*=UTF-8''...` (percent-encoded) form, and the combined form — the previous parser missed `filename*=` entirely and mis-parsed the combined header. The URL-basename fallback is now percent-decoded too. If no usable name remains after sanitizing, the entry ID is used.
+
 ## [v2.0.1] – 2026-08-20
 ### Added
 - Pre-flight download-size estimate. Before downloading, the script sums the source-file sizes of all matched entries (and their child entries) from the flavor-asset metadata it already fetches, then prints e.g. `This download will take up about 12.34 GB, beginning...` (sizes shown in GB, or MB when under 1 GB, with comma-grouped thousands). It compares the estimate against the real free space on the destination drive and only pauses to ask `Continue anyway? [y/N]` when the download would not comfortably fit (10% headroom); comfortable downloads just print the total and proceed. Entries whose size can't be determined in advance (e.g. images with no source flavor) are reported as a separate "unknown size" count rather than silently undercounted.

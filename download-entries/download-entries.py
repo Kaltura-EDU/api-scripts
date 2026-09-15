@@ -30,9 +30,11 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from email.message import Message
 import requests
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
     KalturaBaseEntryFilter, KalturaCategoryFilter, KalturaFilterPager,
@@ -434,6 +436,37 @@ def get_download_url(client, entry):
     return get_flavor_download_url(client, entry)
 
 
+# Characters that are illegal or problematic in filenames across the common
+# filesystems these downloads land on (macOS/APFS, Windows/NTFS, and
+# exFAT/SMB external or network drives), plus control characters.
+_RESERVED_FILENAME_CHARS = r'[<>:"/\\|?*\x00-\x1f]'
+
+
+def _sanitize_filename(name):
+    """Make a server-supplied filename safe to write on any common filesystem,
+    mirroring how the KMC sanitizes download names. Reserved characters (e.g. a
+    colon) are removed so the name isn't silently truncated and the extension is
+    preserved. Returns "" only if nothing usable remains."""
+    if not name:
+        return ""
+    name = unicodedata.normalize("NFC", name)
+    name = re.sub(_RESERVED_FILENAME_CHARS, " ", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    # Leading/trailing dots and spaces cause hidden files or Windows issues.
+    name = name.strip(". ")
+    return name
+
+
+def _filename_from_content_disposition(content_disposition):
+    """Return the filename from a Content-Disposition header, or None. Uses the
+    stdlib email parser so both `filename="..."` and the RFC 5987 `filename*=`
+    (percent-encoded) forms are handled and decoded correctly — the previous
+    naive string split missed `filename*=` and mis-parsed the combined form."""
+    msg = Message()
+    msg["content-disposition"] = content_disposition
+    return msg.get_filename()
+
+
 def get_file_name(url, entry_id, download_folder):
     """Extract the filename from the URL or HTTP response headers.
     Returns None if the file already exists in the download folder.
@@ -443,14 +476,25 @@ def get_file_name(url, entry_id, download_folder):
     try:
         response = requests.head(url, allow_redirects=True)
         if "Content-Disposition" in response.headers:
-            content_disp = response.headers["Content-Disposition"]
-            if "filename=" in content_disp:
-                filename = content_disp.split("filename=")[1].strip('"')
+            filename = _filename_from_content_disposition(
+                response.headers["Content-Disposition"]
+            )
     except requests.RequestException as e:
         print(f"⚠️ Warning: Could not determine filename from headers: {e}")
 
     if not filename:
-        filename = os.path.basename(urlparse(url).path)
+        filename = unquote(os.path.basename(urlparse(url).path))
+
+    # Strip characters the destination filesystem can't store (e.g. a colon),
+    # which otherwise truncate the name and drop the extension on some drives.
+    base, ext = os.path.splitext(filename)
+    base = _sanitize_filename(base)
+    ext = _sanitize_filename(ext)
+    if not base:
+        # Nothing usable left (e.g. the whole name was reserved chars) —
+        # fall back to the entry ID so we still write a sensible file.
+        base = entry_id
+    filename = f"{base}{('.' + ext) if ext else ''}"
 
     if REMOVE_SUFFIX:
         base, ext = os.path.splitext(filename)
