@@ -41,15 +41,42 @@ from KalturaClient.Plugins.Core import (
     KalturaSessionType, KalturaFlavorAssetFilter
 )
 from KalturaClient.exceptions import KalturaException, KalturaClientException
+from dotenv import load_dotenv
 import re
 
-# ---- CONFIGURABLE VARIABLES ----
-# PARTNER_ID = "" DO NOT USE--script will request input
-# ADMIN_SECRET = "" DO NOT USE--script will request input
-DOWNLOAD_FOLDER = "output"
-RETRY_ATTEMPTS = 3
-REMOVE_SUFFIX = True
-MAX_WORKERS = 5
+# Load configuration from a .env file next to this script (if present), so it is
+# found no matter which directory the script is run from.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
+
+def _env_bool(name, default):
+    val = os.getenv(name)
+    if val is None or val.strip() == "":
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "y", "on")
+
+
+def _env_int(name, default, minimum=1):
+    val = os.getenv(name)
+    try:
+        return max(minimum, int(val)) if val not in (None, "") else default
+    except ValueError:
+        return default
+
+
+# ---- CONFIGURABLE VARIABLES (set these in .env; see .env.example) ----
+# The Admin Secret is NEVER read from .env — it is always prompted at runtime.
+# PARTNER_ID may live in .env (it is not secret); if blank, it is prompted.
+PARTNER_ID = os.getenv("PARTNER_ID", "").strip()
+DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER", "output").strip() or "output"
+RETRY_ATTEMPTS = _env_int("RETRY_ATTEMPTS", 3)
+REMOVE_SUFFIX = _env_bool("REMOVE_SUFFIX", True)
+MAX_WORKERS = _env_int("MAX_WORKERS", 5)
+# Optionally append the created date and/or entry ID to every filename. Even
+# with both off, identically named entries are still kept distinct (see
+# _reserve_unique_name) — these just let you control the naming up front.
+APPEND_CREATED_DATE = _env_bool("APPEND_CREATED_DATE", False)
+APPEND_ENTRY_ID = _env_bool("APPEND_ENTRY_ID", False)
 # -- END CONFIGURABLE VARIABLES --
 
 # Set by any thread that hits "No space left on device" so the main thread can
@@ -467,10 +494,61 @@ def _filename_from_content_disposition(content_disposition):
     return msg.get_filename()
 
 
-def get_file_name(url, entry_id, download_folder):
+# Guards filename assignment so concurrent workers can't pick the same name.
+# The disk-existence check alone races: several same-titled entries resolve
+# their names before any file is written, so all pick the bare name and
+# overwrite each other. We also reserve each chosen name here (not just on
+# disk) so a name is claimed the instant it's decided.
+_name_lock = threading.Lock()
+_claimed_names = set()  # full paths reserved during this run
+
+
+def _reserve_unique_name(download_folder, base, ext, entry_id):
+    """Atomically choose and reserve a filename that collides with neither an
+    existing file on disk nor a name another worker already claimed this run.
+    Returns None if this exact entry's ID-qualified file already exists (resume:
+    already downloaded). Prefers the clean name, then `<base>_<entry_id>`, then
+    a numeric suffix."""
+    def taken(name):
+        full = os.path.join(download_folder, name)
+        return full in _claimed_names or os.path.exists(full)
+
+    with _name_lock:
+        id_name = f"{base}_{entry_id}{ext}"
+        if os.path.exists(os.path.join(download_folder, id_name)):
+            return None  # already downloaded on a previous run
+        if not taken(f"{base}{ext}"):
+            chosen = f"{base}{ext}"
+        elif not taken(id_name):
+            chosen = id_name
+        else:
+            n = 2
+            while taken(f"{base}_{entry_id}_{n}{ext}"):
+                n += 1
+            chosen = f"{base}_{entry_id}_{n}{ext}"
+        _claimed_names.add(os.path.join(download_folder, chosen))
+        return chosen
+
+
+def _created_stamp(entry):
+    """Return the entry's created date-time as YYYY-MM-DD-HHMM (24-hour), or ""
+    if unavailable. Guards against unset SDK fields, which come back as a truthy
+    NotImplemented rather than None."""
+    ts = getattr(entry, "createdAt", None)
+    if not isinstance(ts, int):
+        return ""
+    try:
+        return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d-%H%M")
+    except (ValueError, OSError, OverflowError):
+        return ""
+
+
+def get_file_name(url, entry, download_folder):
     """Extract the filename from the URL or HTTP response headers.
     Returns None if the file already exists in the download folder.
-    Uses entry_id to disambiguate entries that share the same name."""
+    Applies the APPEND_CREATED_DATE / APPEND_ENTRY_ID options and disambiguates
+    entries that share the same name."""
+    entry_id = entry.id
     filename = None
 
     try:
@@ -502,15 +580,19 @@ def get_file_name(url, entry_id, download_folder):
         base = re.sub(r"[_\-\s]+$", "", base)
         filename = f"{base}{ext}"
 
-    if os.path.exists(os.path.join(download_folder, filename)):
-        # Collision: try an entry-ID-qualified name to distinguish same-titled entries
-        base, ext = os.path.splitext(filename)
-        filename_with_id = f"{base}_{entry_id}{ext}"
-        if os.path.exists(os.path.join(download_folder, filename_with_id)):
-            return None  # Already downloaded (entry-ID version exists)
-        return filename_with_id
-
-    return filename
+    base, ext = os.path.splitext(filename)
+    # Optional, user-configured tags placed at the START of the name (before the
+    # collision check). Order: created date-time (YYYY-MM-DD-HHMM), then entry ID.
+    prefix_parts = []
+    if APPEND_CREATED_DATE:
+        stamp = _created_stamp(entry)
+        if stamp:
+            prefix_parts.append(stamp)
+    if APPEND_ENTRY_ID:
+        prefix_parts.append(entry_id)
+    if prefix_parts:
+        base = f"{'_'.join(prefix_parts)}_{base}"
+    return _reserve_unique_name(download_folder, base, ext, entry_id)
 
 
 def download_file(url, filename, download_folder):
@@ -540,38 +622,10 @@ def download_file(url, filename, download_folder):
         raise
 
 
-def worker(queue, client):
-    while queue:
-        entry = queue.pop(0)
-        url = get_download_url(client, entry)
-        if url:
-            filename = get_file_name(url, entry.id)
-            download_file(url, filename)
-        else:
-            print(
-                f"⚠️ Skipping {entry.id} ({entry.name}): No valid download "
-                f"URL found."
-                )
-
-        children = get_child_entries(client, entry.id)
-        for child in children:
-            child_url = get_download_url(client, child)
-            if child_url:
-                child_filename = get_file_name(child_url, child.id)
-                download_file(child_url, child_filename)
-            else:
-                print(
-                    f"⚠️ Skipping child entry {child.id} ({child.name}): No "
-                    f"valid download URL found."
-                    )
-
-        time.sleep(1)  # Prevent overwhelming the server
-
-
 def process_entry(client, entry, index, csv_writer, download_folder):
     url = get_download_url(client, entry)
     if url:
-        filename = get_file_name(url, entry.id, download_folder)
+        filename = get_file_name(url, entry, download_folder)
         if filename is None:
             print(
                 f"{index}. ⏭️ Skipping {entry.id} ({entry.name}): "
@@ -593,7 +647,7 @@ def process_entry(client, entry, index, csv_writer, download_folder):
     for child in children:
         child_url = get_download_url(client, child)
         if child_url:
-            child_filename = get_file_name(child_url, child.id, download_folder)
+            child_filename = get_file_name(child_url, child, download_folder)
             if child_filename is None:
                 print(f"  ↳ ⏭️ Skipping child {child.id} ({child.name}): already downloaded.")
                 write_csv_row(csv_writer, child, "Already Downloaded")
@@ -651,7 +705,9 @@ def _process_entry_with_retry(client_factory, entry, idx, csv_writer, download_f
 
 
 def main():
-    partner_id = input("Enter your Partner ID: ").strip()
+    # Partner ID may come from .env (it is not secret); prompt only if unset.
+    partner_id = PARTNER_ID or input("Enter your Partner ID: ").strip()
+    # The Admin Secret is always prompted and never read from .env.
     admin_secret = getpass.getpass("Enter your Admin Secret: ").strip()
 
     client = get_kaltura_client(partner_id, admin_secret)

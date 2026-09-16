@@ -1,5 +1,16 @@
 # Changelog – download-entries.py
 
+## [v2.1.0] – 2026-09-16
+### Added
+- `.env` configuration. The script now reads its settings from a `.env` file in its own folder (with a documented `.env.example` template): `PARTNER_ID` (optional — it's not secret; prompted if blank), `DOWNLOAD_FOLDER`, `MAX_WORKERS`, `RETRY_ATTEMPTS`, and `REMOVE_SUFFIX`. The **Admin Secret is still always prompted and never stored in `.env`**. Previously these were hardcoded globals. Requires `python-dotenv` (added to `requirements.txt`, along with `requests`).
+- Filename options for same-titled entries: `APPEND_CREATED_DATE` (prepends the entry's created date-time as `YYYY-MM-DD-HHMM`, 24-hour) and `APPEND_ENTRY_ID` (prepends the entry ID) let you tag every filename up front. Both tags go at the front of the name; with both on the order is date-time, then entry ID, then the title (e.g. `2025-03-14-0930_1_5li7h9af_My Lecture.mp4`). Both default to off; when set, the tag is applied before the automatic collision check.
+
+### Fixed
+- Entries that share a title no longer overwrite each other. When Kaltura returns the same download filename for multiple entries (e.g. several entries all named "ESCALATE Training Program"), concurrent worker threads could each resolve to the same name before any file was written, so they wrote to the same path and all but one file was lost (the run reported N downloads but fewer files landed on disk). Filenames are now reserved atomically under a lock, checking both existing files on disk and names already claimed by other workers this run; colliding entries get an `_<entryId>` suffix (then a numeric suffix if still needed), guaranteeing one file per entry. Resume (skipping an already-downloaded entry) still works. Note: an entry that previously received the clean, unsuffixed name will re-download under an `_<entryId>` name on a later run, since the script can't yet map a clean filename back to a specific entry ID.
+
+### Removed
+- Dead `worker()` function left over from before the multithreading refactor (never called; had stale call signatures).
+
 ## [v2.0.2] – 2026-09-15
 ### Fixed
 - Filenames with a colon (or other filesystem-reserved characters) no longer produce truncated files with no extension. Server-supplied names are now sanitized the way the KMC sanitizes them — reserved characters (`< > : " / \ | ? *` and control characters) are stripped while the extension is preserved — so the file writes correctly on macOS, Windows, and external/network drives (exFAT/SMB) where a colon is illegal.
