@@ -30,6 +30,12 @@ filters from `.env`. Results are written to
 configurable via `OUTPUT_DIR`, is created automatically). Set
 `EXPORT_CSV=False` to print the summary only, without writing a file.
 
+Before searching, the script lists every filter that's set in `.env`, plus
+the date range and any defaults that affect results (like `STATUS` being
+READY-only when left blank). It lists them again with the final totals.
+The `.env` file is long, so check this list for a value left over from an
+earlier search.
+
 ## How filters combine
 
 - **Comma-separated values within a single variable are OR'd.** For example
@@ -125,6 +131,34 @@ lower `MAX_WORKERS` (`1` fetches one page at a time) rather than raising
 `MAX_NETWORK_RETRIES`. Pages finish in any order, but the CSV is always sorted
 by created date, newest first.
 
+## Child entries (Zoom layouts, dual-screen recordings)
+
+Some recordings are stored as a **parent entry with child entries**. When a
+Zoom meeting is recorded in more than one layout (e.g. shared screen and
+speaker view), Kaltura keeps one layout as the parent and the others as
+children; dual-screen (multi-stream) recordings work the same way. Kaltura
+hides child entries from normal searches — only the parent shows up — so the
+script looks up the children of every matched entry and lists them in the CSV
+**directly under their parent**:
+
+| Column | Parent row | Child row | Entry with no children |
+| --- | --- | --- | --- |
+| `relationship` | `parent` | `child` | `standalone` |
+| `parent_entry_id` | blank | the parent's entry ID | blank |
+| `child_count` | number of children | blank | `0` |
+| `child_entry_ids` | children's IDs, `;`-separated | blank | blank |
+
+Children are included because their parent matched — they don't need to
+match your filters themselves (a child usually isn't in any categories, for
+example). They're looked up with the same `STATUS` setting as the main search.
+Non-video children show their entry type (e.g. `DOCUMENT`) in `media_type`.
+The console summary reports children and their duration separately, so the
+matched-entry totals aren't inflated by a recording's extra layouts.
+
+This costs one extra API request per matched entry, run in parallel across
+`MAX_WORKERS`. Set `INCLUDE_CHILDREN=False` in `.env` to skip it;
+`relationship` and `child_count` are then left blank.
+
 ## Network reliability
 
 Every Kaltura API call (the session start and each page of `media.list`) is
@@ -139,13 +173,14 @@ logic above. Tune `REQUEST_TIMEOUT`, `MAX_NETWORK_RETRIES`, and
 
 ## Output columns
 
-The CSV includes: `entry_id`, `name`, `description`, `media_type`, `status`,
-`moderation_status`, `moderation_count`, `duration_sec`, `duration_min`,
-`plays`, `views`, `rank`, `total_rank`, `width`, `height`, `created_at`,
-`updated_at`, `last_played_at`, `owner_id`, `creator_id`, `categories`,
-`category_ids`, `tags`, `reference_id`, `access_control_id`, `flavor_count`,
-`partner_sort_value`, `root_entry_id`, `parent_entry_id`, `display_in_search`,
-and `thumbnail_url`. Timestamps are formatted in the `TIMEZONE` from `.env`
+The CSV includes: `entry_id`, `relationship`, `parent_entry_id`,
+`child_count`, `child_entry_ids` (see [Child entries](#child-entries-zoom-layouts-dual-screen-recordings)),
+`name`, `description`, `media_type`, `status`, `moderation_status`,
+`moderation_count`, `duration_sec`, `duration_min`, `plays`, `views`, `rank`,
+`total_rank`, `width`, `height`, `created_at`, `updated_at`, `last_played_at`,
+`owner_id`, `creator_id`, `categories`, `category_ids`, `tags`,
+`reference_id`, `access_control_id`, `flavor_count`, `partner_sort_value`,
+`root_entry_id`, `display_in_search`, and `thumbnail_url`. Timestamps are formatted in the `TIMEZONE` from `.env`
 (default `US/Pacific`); commas inside `categories` and `tags` are replaced
 with semicolons so they stay in a single CSV field.
 

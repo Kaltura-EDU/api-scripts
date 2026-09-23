@@ -9,6 +9,10 @@ Automatically re-chunks queries by progressively smaller time intervals if
 Kaltura's 10,000-entry API cap is encountered, then fetches every page in
 parallel across MAX_WORKERS threads (each with its own Kaltura session).
 
+Child entries (e.g., the extra layouts of a Zoom recording), which Kaltura
+hides from normal searches, are looked up for every match and listed
+directly under their parent in the CSV.
+
 The admin secret is always prompted at runtime and never read from or
 written to disk.
 """
@@ -28,8 +32,10 @@ import requests
 from dotenv import find_dotenv, load_dotenv
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
+    KalturaBaseEntryFilter,
     KalturaEntryModerationStatus,
     KalturaEntryStatus,
+    KalturaEntryType,
     KalturaFilterPager,
     KalturaMediaEntryFilter,
     KalturaMediaEntryOrderBy,
@@ -109,6 +115,14 @@ local_tz = pytz.timezone(TIMEZONE)
 NAME_PREFILTER = getenv("NAME_PREFILTER", "True").strip().lower() in (
     "true", "1", "yes",
 )
+# When True (default), every matched entry is checked for child entries
+# (e.g., the extra layouts of a Zoom recording, or the second stream of a
+# dual-screen recording). Kaltura hides children from normal searches, so
+# they're looked up per matched entry and listed right under their parent.
+# Costs one extra API request per matched entry; set False to skip.
+INCLUDE_CHILDREN = getenv("INCLUDE_CHILDREN", "True").strip().lower() in (
+    "true", "1", "yes",
+)
 # One or more Kaltura entry IDs (e.g., 0_abc123). Comma = OR.
 ENTRY_ID = env_list("ENTRY_ID")
 # External/reference ID assigned to the entry outside of Kaltura (e.g.,
@@ -175,6 +189,7 @@ MOD_STATUS_MAP = _enum_map(KalturaEntryModerationStatus)
 MEDIA_TYPE_LABEL = {v: k for k, v in MEDIA_TYPE_MAP.items()}
 STATUS_LABEL = {v: k for k, v in STATUS_MAP.items()}
 MOD_STATUS_LABEL = {v: k for k, v in MOD_STATUS_MAP.items()}
+ENTRY_TYPE_LABEL = {v: k for k, v in _enum_map(KalturaEntryType).items()}
 
 
 # ── Startup validation ────────────────────────────────────────────────
@@ -292,7 +307,8 @@ def get_client():
             elif type(e).__name__ == "KalturaClientException":
                 print(
                     "\n❌ Could not reach Kaltura to start a session.\n"
-                    f"   {e}\n   Check your internet connection and try again.\n"
+                    f"   {e}\n"
+                    "   Check your internet connection and try again.\n"
                 )
             else:
                 print(f"\n❌ Could not start Kaltura session: {e}\n")
@@ -529,6 +545,21 @@ def plan_chunks(start, end, level=0):
 
 
 # ── Parallel fetch ────────────────────────────────────────────────────
+def run_parallel(fn, tasks):
+    """Run fn(*task) for every task across MAX_WORKERS threads and yield
+    (task, result) pairs on the calling thread as each one finishes, so
+    callers can merge results without locks. On an error or Ctrl+C, queued
+    tasks are dropped instead of waiting for the whole queue to finish."""
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = {pool.submit(fn, *task): task for task in tasks}
+        try:
+            for future in as_completed(futures):
+                yield futures[future], future.result()
+        except BaseException:
+            pool.shutdown(cancel_futures=True)
+            raise
+
+
 def fetch_page(start, end, page_index):
     """Fetch one page of matching entries in [start, end]. Runs in a worker
     thread, on that thread's own client."""
@@ -564,23 +595,14 @@ def fetch_all_entries(range_start, range_end):
         f"worker(s)..."
     )
     by_id = {}  # keyed by entry ID so a shifted page can't add duplicates
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futures = {pool.submit(fetch_page, *p): p for p in pages}
-        try:
-            for done, future in enumerate(as_completed(futures), 1):
-                start, end, page_index = futures[future]
-                objects = future.result()
-                print(
-                    f"  [{done}/{len(pages)}] {start} → {end} "
-                    f"page {page_index}: {len(objects)} entries"
-                )
-                for entry in objects:
-                    by_id[entry.id] = entry
-        except BaseException:
-            # On an error or Ctrl+C, drop the queued pages instead of
-            # waiting for the whole queue to finish first.
-            pool.shutdown(cancel_futures=True)
-            raise
+    results = run_parallel(fetch_page, pages)
+    for done, ((start, end, page_index), objects) in enumerate(results, 1):
+        print(
+            f"  [{done}/{len(pages)}] {start} → {end} "
+            f"page {page_index}: {len(objects)} entries"
+        )
+        for entry in objects:
+            by_id[entry.id] = entry
 
     # Pages finish in any order; list newest first.
     return sorted(
@@ -588,37 +610,136 @@ def fetch_all_entries(range_start, range_end):
     )
 
 
+# ── Child entries ─────────────────────────────────────────────────────
+def fetch_children(parent_id):
+    """Return every child entry of parent_id — e.g., the extra layouts of a
+    Zoom recording or the second stream of a dual-screen recording. Kaltura
+    hides children from normal list results, so they can only be found by
+    asking per parent. Uses baseEntry.list (not media.list) so non-video
+    children such as documents come back too. Runs in a worker thread."""
+    f = KalturaBaseEntryFilter()
+    f.parentEntryIdEqual = parent_id
+    if STATUS_FILTER:
+        f.statusIn = ",".join(STATUS_MAP[s.upper()] for s in STATUS_FILTER)
+    pager = KalturaFilterPager()
+    pager.pageSize = PAGE_SIZE
+    pager.pageIndex = 1
+    children = []
+    while True:
+        result = call_with_retry(get_client().baseEntry.list, f, pager)
+        objects = result.objects or []
+        children.extend(objects)
+        if len(objects) < PAGE_SIZE:
+            return children
+        pager.pageIndex += 1
+
+
+def find_children(entries):
+    """Look up the children of every matched entry across MAX_WORKERS
+    threads. Returns {parent_id: [child, ...]} for parents that have any,
+    each parent's children oldest first."""
+    if not entries:
+        return {}
+    total = len(entries)
+    print(
+        f"\nChecking {total:,} matched entries for child entries "
+        f"({min(MAX_WORKERS, total)} worker(s))..."
+    )
+    step = max(1, total // 10)
+    children_by_parent = {}
+    found = 0
+    results = run_parallel(fetch_children, [(e.id,) for e in entries])
+    for done, ((parent_id,), children) in enumerate(results, 1):
+        if children:
+            children_by_parent[parent_id] = sorted(
+                children, key=lambda c: (c.createdAt or 0, c.id)
+            )
+            found += len(children)
+        if done % step == 0 or done == total:
+            print(
+                f"  [{done:,}/{total:,}] checked — {found:,} child "
+                f"entries found so far"
+            )
+    return children_by_parent
+
+
+def build_rows(entries, children_by_parent):
+    """CSV rows in output order: each matched entry, followed directly by
+    its children."""
+    listed_as_child = {
+        c.id for kids in children_by_parent.values() for c in kids
+    }
+    rows = []
+    for entry in entries:
+        if entry.id in listed_as_child:
+            continue  # it's listed under its parent instead
+        kids = children_by_parent.get(entry.id, [])
+        own_parent = safe(entry, "parentEntryId")
+        if kids:
+            relationship = "parent"
+        elif own_parent:
+            relationship = "child"
+        else:
+            relationship = "standalone" if INCLUDE_CHILDREN else ""
+        rows.append(entry_to_row(
+            entry, relationship, own_parent,
+            kids if INCLUDE_CHILDREN and not own_parent else None,
+        ))
+        for child in kids:
+            rows.append(entry_to_row(child, "child", entry.id))
+    return rows
+
+
 # ── Entry → CSV row ───────────────────────────────────────────────────
 def safe(entry, attr, default=""):
+    # Fields the API didn't return are None or the SDK's NotImplemented
+    # placeholder; non-media entries (e.g., a document child) lack media
+    # fields like duration entirely.
     val = getattr(entry, attr, default)
-    return val if val is not None else default
+    return default if val is None or val is NotImplemented else val
 
 
-def entry_to_row(entry):
-    duration_sec = entry.duration or 0
-    media_type_val = (
-        entry.mediaType.getValue() if entry.mediaType else None
-    )
-    status_val = entry.status.getValue() if entry.status else None
+def duration_of(entry):
+    val = safe(entry, "duration", 0)
+    return val if isinstance(val, int) else 0
+
+
+def _enum_value(val):
+    return val.getValue() if hasattr(val, "getValue") else (val or None)
+
+
+def entry_to_row(entry, relationship="", parent_id="", children=None):
+    """One CSV row. relationship / parent_id / children describe the entry's
+    place in a parent-child group; children=None leaves child_count blank
+    (children weren't looked up for this row)."""
+    duration_sec = duration_of(entry)
+    media_type_val = _enum_value(safe(entry, "mediaType", None))
+    status_val = _enum_value(safe(entry, "status", None))
+    if media_type_val is not None:
+        media_type = MEDIA_TYPE_LABEL.get(media_type_val, str(media_type_val))
+    else:
+        # Non-media entries have no media type; show their entry type
+        # instead (DATA, DOCUMENT, ...).
+        type_val = _enum_value(safe(entry, "type", None))
+        media_type = ENTRY_TYPE_LABEL.get(type_val, str(type_val or ""))
 
     mod_raw = safe(entry, "moderationStatus")
     mod_val = (
         mod_raw.getValue() if hasattr(mod_raw, "getValue") else mod_raw
     )
 
-    flavor_count = (
-        len(entry.flavorParamsIds.split(","))
-        if getattr(entry, "flavorParamsIds", None)
-        else 0
-    )
+    flavor_ids = safe(entry, "flavorParamsIds")
+    flavor_count = len(flavor_ids.split(",")) if flavor_ids else 0
 
     return {
         "entry_id": entry.id,
-        "name": entry.name or "",
+        "relationship": relationship,
+        "parent_entry_id": parent_id,
+        "child_count": len(children) if children is not None else "",
+        "child_entry_ids": ";".join(c.id for c in children or []),
+        "name": safe(entry, "name"),
         "description": safe(entry, "description"),
-        "media_type": MEDIA_TYPE_LABEL.get(
-            media_type_val, str(media_type_val)
-        ),
+        "media_type": media_type,
         "status": STATUS_LABEL.get(status_val, str(status_val)),
         "moderation_status": (
             MOD_STATUS_LABEL.get(mod_val, str(mod_val))
@@ -648,14 +769,15 @@ def entry_to_row(entry):
         "flavor_count": flavor_count,
         "partner_sort_value": safe(entry, "partnerSortValue"),
         "root_entry_id": safe(entry, "rootEntryId"),
-        "parent_entry_id": safe(entry, "parentEntryId"),
         "display_in_search": safe(entry, "displayInSearch"),
         "thumbnail_url": safe(entry, "thumbnailUrl"),
     }
 
 
 CSV_FIELDS = [
-    "entry_id", "name", "description", "media_type", "status",
+    "entry_id", "relationship", "parent_entry_id",
+    "child_count", "child_entry_ids",
+    "name", "description", "media_type", "status",
     "moderation_status", "moderation_count",
     "duration_sec", "duration_min",
     "plays", "views", "rank", "total_rank",
@@ -665,7 +787,7 @@ CSV_FIELDS = [
     "categories", "category_ids", "tags",
     "reference_id", "access_control_id",
     "flavor_count", "partner_sort_value",
-    "root_entry_id", "parent_entry_id",
+    "root_entry_id",
     "display_in_search", "thumbnail_url",
 ]
 
@@ -699,6 +821,59 @@ def probe_name_search(term):
             print(f"        · {obj.name}")
 
 
+# ── Search-term recap ─────────────────────────────────────────────────
+def active_filters():
+    """(env var, value) for every filter that's actually set, read at call
+    time. The .env file is long, so each run prints this back — a filter
+    left over from an earlier search is otherwise easy to miss."""
+    named = [
+        ("ENTRY_ID", ENTRY_ID),
+        ("REFERENCE_ID", REFERENCE_ID),
+        ("SEARCH_TEXT", SEARCH_TEXT),
+        ("ENTRY_NAME_EQUALS", ENTRY_NAME_EQUALS),
+        ("ENTRY_NAME_BEGINS_WITH", ENTRY_NAME_BEGINS_WITH),
+        ("ENTRY_NAME_CONTAINS", ENTRY_NAME_CONTAINS),
+        ("ENTRY_NAME_ENDS_WITH", ENTRY_NAME_ENDS_WITH),
+        ("ENTRY_NAME_NOT_CONTAINS", ENTRY_NAME_NOT_CONTAINS),
+        ("OWNER_ID", OWNER_ID),
+        ("OWNER_STARTS_WITH", OWNER_STARTS_WITH),
+        ("OWNER_ENDS_WITH", OWNER_ENDS_WITH),
+        ("TAG", TAG),
+        ("CATEGORY_ID", CATEGORY_ID),
+        ("CATEGORY_NAME", CATEGORY_NAME),
+        ("MEDIA_TYPE", MEDIA_TYPE_FILTER),
+        ("STATUS", STATUS_FILTER),
+        ("MODERATION_STATUS", MODERATION_STATUS_FILTER),
+        ("UPDATED_AFTER", UPDATED_AFTER),
+        ("UPDATED_BEFORE", UPDATED_BEFORE),
+        ("DURATION_MIN_SEC", DURATION_MIN_SEC),
+        ("DURATION_MAX_SEC", DURATION_MAX_SEC),
+    ]
+    return [
+        (name, ", ".join(val) if isinstance(val, list) else str(val))
+        for name, val in named if val
+    ]
+
+
+def print_search_terms(range_start, range_end, heading):
+    """List the filters this run is using. Printed before the search and
+    again with the totals, since the progress lines scroll the first one
+    off screen on a long run."""
+    active = active_filters()
+    print(f"\n{heading}")
+    print(f"  {'CREATED (date range)':<24} {range_start} → {range_end}")
+    for name, value in active:
+        print(f"  {name:<24} {value}")
+    if not STATUS_FILTER:
+        print(f"  {'STATUS':<24} READY only (Kaltura's default)")
+    if not NAME_PREFILTER:
+        print(f"  {'NAME_PREFILTER':<24} False — names matched locally")
+    if not INCLUDE_CHILDREN:
+        print(f"  {'INCLUDE_CHILDREN':<24} False — children not listed")
+    if not active:
+        print("  (no other filters set — every entry in the date range)")
+
+
 # ── Main ──────────────────────────────────────────────────────────────
 def main():
     global ADMIN_SECRET
@@ -726,6 +901,10 @@ def main():
             _parse_date(CREATED_BEFORE) if CREATED_BEFORE else date.today()
         )
 
+    print_search_terms(
+        range_start, range_end, "Searching with these filters:"
+    )
+
     raw_entries = fetch_all_entries(range_start, range_end)
 
     entries = [e for e in raw_entries if passes_client_filters(e)]
@@ -733,17 +912,26 @@ def main():
         removed = len(raw_entries) - len(entries)
         print(f"Client-side filters removed {removed:,} entries.")
 
-    rows = [entry_to_row(e) for e in entries]
+    children_by_parent = find_children(entries) if INCLUDE_CHILDREN else {}
+    rows = build_rows(entries, children_by_parent)
 
     # ── Console summary ───────────────────────────────────────────────
-    total_sec = sum(r["duration_sec"] for r in rows)
-    total_min = total_sec / 60
-    total_hours = total_min / 60
+    # Matched entries and children are totalled separately, so the extra
+    # layouts of a recording don't inflate the matched duration.
+    total_min = sum(duration_of(e) for e in entries) / 60
+    children = [c for kids in children_by_parent.values() for c in kids]
 
+    print_search_terms(range_start, range_end, "Searched with:")
     print(f"\n{'─' * 40}")
-    print(f"{'Entries:':<22}{len(rows):>15,}")
+    print(f"{'Entries matched:':<22}{len(entries):>15,}")
     print(f"{'Duration (min):':<22}{total_min:>15,.2f}")
-    print(f"{'Duration (hours):':<22}{total_hours:>15,.2f}")
+    print(f"{'Duration (hours):':<22}{total_min / 60:>15,.2f}")
+    if INCLUDE_CHILDREN:
+        child_hours = sum(duration_of(c) for c in children) / 3600
+        print(f"{'With children:':<22}{len(children_by_parent):>15,}")
+        print(f"{'Child entries:':<22}{len(children):>15,}")
+        print(f"{'Child duration (hrs):':<22}{child_hours:>15,.2f}")
+    print(f"{'CSV rows:':<22}{len(rows):>15,}")
 
     # ── CSV export ────────────────────────────────────────────────────
     if EXPORT_CSV:
