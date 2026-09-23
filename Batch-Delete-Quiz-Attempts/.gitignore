@@ -1,0 +1,15 @@
+# Secrets & environment-specific config — never commit
+.env
+
+# Input ID lists and run reports — the scripts prompt for .txt file names,
+# and these contain real user and entry IDs
+*.txt
+!requirements.txt
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store

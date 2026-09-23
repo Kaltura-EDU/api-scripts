@@ -1,6 +1,9 @@
 # Secrets & environment-specific config — never commit
 .env
 
+# Generated reports — contain real entry data
+output/
+
 # Python
 venv/
 __pycache__/

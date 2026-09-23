@@ -1,6 +1,10 @@
 # Secrets & environment-specific config — never commit
 .env
 
+# Generated reports (written into this folder) — contain real usernames and
+# category memberships
+*.csv
+
 # Python
 venv/
 __pycache__/
