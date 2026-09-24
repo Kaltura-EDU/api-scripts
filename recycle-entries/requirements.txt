@@ -1,5 +1,4 @@
 KalturaApiClient
-lxml
-requests
 python-dotenv
+requests
 wakepy

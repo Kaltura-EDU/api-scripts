@@ -1,5 +1,9 @@
 # Changelog – download-entries.py
 
+## [v2.1.1] – 2026-09-24
+### Changed
+- Replaced macOS-only `caffeinate` with the cross-platform `wakepy` library to prevent sleep during downloads. Keeps the system awake on Windows and Linux as well as macOS. Requires `wakepy` (added to `requirements.txt`).
+
 ## [v2.1.0] – 2026-09-16
 ### Added
 - `.env` configuration. The script now reads its settings from a `.env` file in its own folder (with a documented `.env.example` template): `PARTNER_ID` (optional — it's not secret; prompted if blank), `DOWNLOAD_FOLDER`, `MAX_WORKERS`, `RETRY_ATTEMPTS`, and `REMOVE_SUFFIX`. The **Admin Secret is still always prompted and never stored in `.env`**. Previously these were hardcoded globals. Requires `python-dotenv` (added to `requirements.txt`, along with `requests`).

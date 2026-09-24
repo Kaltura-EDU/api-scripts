@@ -59,7 +59,7 @@ from KalturaClient.exceptions import KalturaException
 # DEST_ADMIN_SECRET = "" DO NOT USE--script will prompt for this
 COPY_QUIZ_ANSWERS = False
 COPY_ASR_CAPTIONS = True
-CAPTION_LABEL = "English (auto-generated)"
+CAPTION_LABEL = "English"
 COPY_ATTACHMENTS = True
 DESTINATION_OWNER = ""
 DESTINATION_COEDITORS = ""
@@ -990,7 +990,7 @@ def main():
         print("-" * 80 + "\n")
 
         copied_entry = copy_entry(
-            client_source, client_dest, entry, DEST_PID,
+            client_source, client_dest, entry, dest_pid,
             DESTINATION_COEDITORS, DESTINATION_COPUBLISHERS, DESTINATION_TAG,
             csv_entries, entry_id_mapping
         )

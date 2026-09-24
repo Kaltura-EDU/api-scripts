@@ -14,7 +14,7 @@ Input CSVs go in `input/`. Output CSVs are written to `output/` (both gitignored
 ## Setup
 
 ```bash
-pip install python-dotenv requests KalturaClient
+pip install python-dotenv requests KalturaApiClient wakepy
 cp .env.example .env
 # Edit .env with your credentials and settings
 ```

@@ -29,9 +29,7 @@ import csv
 import dataclasses
 import getpass
 import os
-import platform
 import signal
-import subprocess
 import sys
 import threading
 import time
@@ -55,6 +53,14 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise SystemExit(
         "Missing dependency: python-dotenv. Install with: pip install python-dotenv"
+    ) from exc
+
+
+try:
+    from wakepy import keep
+except ImportError as exc:  # pragma: no cover
+    raise SystemExit(
+        "Missing dependency: wakepy. Install with: pip install wakepy"
     ) from exc
 
 
@@ -771,21 +777,6 @@ def recycle_one(
     return out
 
 
-def prevent_sleep() -> Optional[subprocess.Popen]:
-    """Spawn `caffeinate` tied to our own PID so the Mac won't sleep mid-run.
-
-    It exits automatically whenever this script exits (normal completion,
-    crash, or Ctrl+C), so no cleanup is needed. No-op on non-macOS platforms
-    or if caffeinate isn't available.
-    """
-    if platform.system() != "Darwin":
-        return None
-    try:
-        return subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())])
-    except FileNotFoundError:
-        return None
-
-
 def _install_signal_handlers() -> None:
     def _handle_sigint(signum: int, frame: Any) -> None:  # noqa: ARG001
         STOP_EVENT.set()
@@ -859,173 +850,177 @@ def main() -> None:
     # any worker threads start.
     build_client_from_env(cfg)
 
-    if prevent_sleep():
-        print("System sleep prevented for the duration of this run (caffeinate).")
-
-    run_ts = timestamp_string(cfg.timezone)
-    output_dir = Path(__file__).resolve().parent / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    out_csv = str(output_dir / f"{run_ts}_recycledEntries.csv")
-
-    print("=== Recycle Entries (raw baseEntry API calls via KS) ===")
-    print(f"Timestamp: {run_ts} ({cfg.timezone})")
-    print(f"Input CSV: {cfg.input_filename}")
-    print(f"Output CSV: {out_csv}")
-    print(f"Entry ID column: {cfg.column_header_entry_id}")
-    print(f"DRY_RUN: {cfg.dry_run}")
-    print(
-        f"VALIDATE_ENTRY_EXISTS: {cfg.validate_entry_exists} | "
-        f"VALIDATE_ENTRY_EXISTS_IN_DRY_RUN: "
-        f"{cfg.validate_entry_exists_in_dry_run}"
-    )
-    print(
-        f"MAX_WORKERS: {cfg.max_workers} | MAX_RETRIES: {cfg.max_retries}"
-    )
-    print(
-        f"RECYCLE_RATE_PER_SEC: {cfg.recycle_rate_per_sec:g} | "
-        f"BLOCKED_RETRIES: {cfg.blocked_retries} | "
-        f"BLOCKED_RETRY_DELAY: {cfg.blocked_retry_delay:g}"
-    )
-    print(
-        f"BACKOFF_BASE_SEC: {cfg.backoff_base_sec} | "
-        f"REQUEST_DELAY_SEC: {cfg.request_delay_sec} | "
-        f"REQUEST_TIMEOUT_SEC: {cfg.request_timeout_sec} | "
-        f"REQUEST_CONNECT_TIMEOUT_SEC: {cfg.request_connect_timeout_sec}"
-    )
-    print(f"PROGRESS_EVERY: {cfg.progress_every}")
-    if cfg.progress_every == 1:
-        print(
-            "Progress reporting is set to every completed row. "
-            "For less terminal noise, try PROGRESS_EVERY=5 or 10."
-        )
-    print("-----------------------------------------")
-
-    rows, base_headers = _read_csv_rows(cfg.input_filename)
-
-    # Extra output fields (appended to keep original columns stable)
-    extra_headers = [
-        "entry_id_normalized",
-        "entry_status",
-        "recycled_success",
-        "failure_reason",
-        "failure_detail",
-        "kaltura_error_code",
-        "attempt_number",
-        "recycled_at",
-    ]
-
-    # Ensure base headers are unique and stable
-    base_headers_unique = []
-    seen = set()
-    for h in base_headers:
-        if h in seen:
-            continue
-        base_headers_unique.append(h)
-        seen.add(h)
-
-    fieldnames = base_headers_unique + extra_headers
-    _write_output_header(out_csv, base_headers_unique, extra_headers)
-
-    if not rows:
-        print("No rows found in input CSV.")
-        print(f"Output CSV created: {out_csv}")
-        return
-
-    lock = threading.Lock()
-    seen_ids: set = set()
-    thread_local = threading.local()
-    rate_limiter = RateLimiter(cfg.recycle_rate_per_sec)
-
-    total = len(rows)
-    start = time.monotonic()
-
-    def _elapsed() -> str:
-        secs = int(time.monotonic() - start)
-        h, rem = divmod(secs, 3600)
-        m, s = divmod(rem, 60)
-        if h:
-            return f"{h}h{m:02d}m{s:02d}s"
-        if m:
-            return f"{m}m{s:02d}s"
-        return f"{s}s"
-
-    print(f"Loaded {total} row(s). Processing...")
-    if cfg.recycle_rate_per_sec > 0 and not cfg.dry_run:
-        eta_min = total / cfg.recycle_rate_per_sec / 60
-        print(
-            f"Pacing recycles at {cfg.recycle_rate_per_sec:g}/sec to stay "
-            f"under Kaltura's throttle — roughly {eta_min:.1f} min minimum."
-        )
-    print("Writing results incrementally to output CSV...")
-    if cfg.max_workers > 1:
-        print(
-            "Note: each worker creates its own Kaltura session. "
-            "If DNS/network resolution is flaky, lower MAX_WORKERS to 1 or 2."
-        )
-
-    completed = 0
-    success_count = 0
-    fail_count = 0
-
-    with ThreadPoolExecutor(max_workers=cfg.max_workers) as pool:
-        futures = {}
-        for idx, row in enumerate(rows, start=1):
-            if STOP_EVENT.is_set():
-                break
-            fut = pool.submit(
-                recycle_one,
-                cfg,
-                thread_local,
-                idx,
-                total,
-                row,
-                seen_ids,
-                lock,
-                rate_limiter,
+    with keep.running(on_fail="warn") as wakepy_mode:
+        if wakepy_mode.active:
+            print(
+                "System sleep prevented for the duration of this run "
+                f"(wakepy, method: {wakepy_mode.active_method})."
             )
-            futures[fut] = idx
 
-        for fut in as_completed(futures):
-            idx = futures[fut]
-            try:
-                result = fut.result()
-            except Exception as exc:
-                result = {
-                    "recycled_success": "false",
-                    "failure_reason": FAIL_UNKNOWN_ERROR,
-                    "failure_detail": f"Unhandled worker exception: {exc}",
-                    "attempt_number": "",
-                    "kaltura_error_code": "",
-                    "recycled_at": now_in_tz(cfg.timezone).isoformat(),
-                }
-                print(f"[{idx}/{total}] Unhandled worker exception: {exc}")
+        run_ts = timestamp_string(cfg.timezone)
+        output_dir = Path(__file__).resolve().parent / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        out_csv = str(output_dir / f"{run_ts}_recycledEntries.csv")
 
-            _append_output_row(out_csv, fieldnames, result)
-            completed += 1
+        print("=== Recycle Entries (raw baseEntry API calls via KS) ===")
+        print(f"Timestamp: {run_ts} ({cfg.timezone})")
+        print(f"Input CSV: {cfg.input_filename}")
+        print(f"Output CSV: {out_csv}")
+        print(f"Entry ID column: {cfg.column_header_entry_id}")
+        print(f"DRY_RUN: {cfg.dry_run}")
+        print(
+            f"VALIDATE_ENTRY_EXISTS: {cfg.validate_entry_exists} | "
+            f"VALIDATE_ENTRY_EXISTS_IN_DRY_RUN: "
+            f"{cfg.validate_entry_exists_in_dry_run}"
+        )
+        print(
+            f"MAX_WORKERS: {cfg.max_workers} | MAX_RETRIES: {cfg.max_retries}"
+        )
+        print(
+            f"RECYCLE_RATE_PER_SEC: {cfg.recycle_rate_per_sec:g} | "
+            f"BLOCKED_RETRIES: {cfg.blocked_retries} | "
+            f"BLOCKED_RETRY_DELAY: {cfg.blocked_retry_delay:g}"
+        )
+        print(
+            f"BACKOFF_BASE_SEC: {cfg.backoff_base_sec} | "
+            f"REQUEST_DELAY_SEC: {cfg.request_delay_sec} | "
+            f"REQUEST_TIMEOUT_SEC: {cfg.request_timeout_sec} | "
+            f"REQUEST_CONNECT_TIMEOUT_SEC: {cfg.request_connect_timeout_sec}"
+        )
+        print(f"PROGRESS_EVERY: {cfg.progress_every}")
+        if cfg.progress_every == 1:
+            print(
+                "Progress reporting is set to every completed row. "
+                "For less terminal noise, try PROGRESS_EVERY=5 or 10."
+            )
+        print("-----------------------------------------")
 
-            if str(result.get("recycled_success", "")).lower() == "true":
-                success_count += 1
-            else:
-                fail_count += 1
+        rows, base_headers = _read_csv_rows(cfg.input_filename)
 
-            if completed % cfg.progress_every == 0 or completed == total:
-                print(
-                    f"Progress: {completed}/{total} [{_elapsed()}] processed "
-                    f"(success {success_count}, failed {fail_count})"
+        # Extra output fields (appended to keep original columns stable)
+        extra_headers = [
+            "entry_id_normalized",
+            "entry_status",
+            "recycled_success",
+            "failure_reason",
+            "failure_detail",
+            "kaltura_error_code",
+            "attempt_number",
+            "recycled_at",
+        ]
+
+        # Ensure base headers are unique and stable
+        base_headers_unique = []
+        seen = set()
+        for h in base_headers:
+            if h in seen:
+                continue
+            base_headers_unique.append(h)
+            seen.add(h)
+
+        fieldnames = base_headers_unique + extra_headers
+        _write_output_header(out_csv, base_headers_unique, extra_headers)
+
+        if not rows:
+            print("No rows found in input CSV.")
+            print(f"Output CSV created: {out_csv}")
+            return
+
+        lock = threading.Lock()
+        seen_ids: set = set()
+        thread_local = threading.local()
+        rate_limiter = RateLimiter(cfg.recycle_rate_per_sec)
+
+        total = len(rows)
+        start = time.monotonic()
+
+        def _elapsed() -> str:
+            secs = int(time.monotonic() - start)
+            h, rem = divmod(secs, 3600)
+            m, s = divmod(rem, 60)
+            if h:
+                return f"{h}h{m:02d}m{s:02d}s"
+            if m:
+                return f"{m}m{s:02d}s"
+            return f"{s}s"
+
+        print(f"Loaded {total} row(s). Processing...")
+        if cfg.recycle_rate_per_sec > 0 and not cfg.dry_run:
+            eta_min = total / cfg.recycle_rate_per_sec / 60
+            print(
+                f"Pacing recycles at {cfg.recycle_rate_per_sec:g}/sec to stay "
+                f"under Kaltura's throttle — roughly {eta_min:.1f} min minimum."
+            )
+        print("Writing results incrementally to output CSV...")
+        if cfg.max_workers > 1:
+            print(
+                "Note: each worker creates its own Kaltura session. "
+                "If DNS/network resolution is flaky, lower MAX_WORKERS to 1 or 2."
+            )
+
+        completed = 0
+        success_count = 0
+        fail_count = 0
+
+        with ThreadPoolExecutor(max_workers=cfg.max_workers) as pool:
+            futures = {}
+            for idx, row in enumerate(rows, start=1):
+                if STOP_EVENT.is_set():
+                    break
+                fut = pool.submit(
+                    recycle_one,
+                    cfg,
+                    thread_local,
+                    idx,
+                    total,
+                    row,
+                    seen_ids,
+                    lock,
+                    rate_limiter,
                 )
+                futures[fut] = idx
 
-            if STOP_EVENT.is_set():
-                break
+            for fut in as_completed(futures):
+                idx = futures[fut]
+                try:
+                    result = fut.result()
+                except Exception as exc:
+                    result = {
+                        "recycled_success": "false",
+                        "failure_reason": FAIL_UNKNOWN_ERROR,
+                        "failure_detail": f"Unhandled worker exception: {exc}",
+                        "attempt_number": "",
+                        "kaltura_error_code": "",
+                        "recycled_at": now_in_tz(cfg.timezone).isoformat(),
+                    }
+                    print(f"[{idx}/{total}] Unhandled worker exception: {exc}")
 
-    if STOP_EVENT.is_set():
-        print("\nStopped early (Ctrl+C). Results written so far.")
+                _append_output_row(out_csv, fieldnames, result)
+                completed += 1
 
-    print("\n=== Summary ===")
-    print(f"Total rows: {total}")
-    print(f"Succeeded: {success_count}")
-    print(f"Failed: {fail_count}")
-    print(f"Elapsed: {_elapsed()}")
-    print(f"Output CSV: {out_csv}")
+                if str(result.get("recycled_success", "")).lower() == "true":
+                    success_count += 1
+                else:
+                    fail_count += 1
+
+                if completed % cfg.progress_every == 0 or completed == total:
+                    print(
+                        f"Progress: {completed}/{total} [{_elapsed()}] processed "
+                        f"(success {success_count}, failed {fail_count})"
+                    )
+
+                if STOP_EVENT.is_set():
+                    break
+
+        if STOP_EVENT.is_set():
+            print("\nStopped early (Ctrl+C). Results written so far.")
+
+        print("\n=== Summary ===")
+        print(f"Total rows: {total}")
+        print(f"Succeeded: {success_count}")
+        print(f"Failed: {fail_count}")
+        print(f"Elapsed: {_elapsed()}")
+        print(f"Output CSV: {out_csv}")
 
 
 if __name__ == "__main__":
