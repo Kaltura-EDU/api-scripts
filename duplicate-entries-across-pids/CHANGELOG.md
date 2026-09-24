@@ -1,5 +1,9 @@
 # Changelog
 
+## [v1.3.1] - 2026-09-24
+### Changed
+- Updated `DEST_PID` to be `dest_pid` since the all-caps version is commented out in the main branch.
+
 ## [v1.3.0] - 2026-04-30
 ### Changed
 - Output filename format standardized: timestamp moved to the beginning of the filename and format updated to `YYYY-MM-DD-HHMM`. New format: `YYYY-MM-DD-HHMM_CrossInstanceDuplication.csv`.
@@ -36,4 +40,4 @@ Andy Clark
 Systems Administrator, Learning Systems  
 Baylor University  
   
-*Last updated 2025-05-05*
+*Last updated 2026-09-24*
