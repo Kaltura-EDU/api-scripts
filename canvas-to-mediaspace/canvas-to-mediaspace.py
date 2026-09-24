@@ -45,7 +45,6 @@ import csv
 import json
 import os
 import random
-import subprocess
 import sys
 import threading
 import time
@@ -56,6 +55,7 @@ from urllib.parse import quote_plus
 
 import pytz
 from dotenv import load_dotenv
+from wakepy import keep
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
     KalturaBaseEntryFilter,
@@ -167,28 +167,6 @@ def log(course_id: str, msg: str):
     """Thread-safe print prefixed with [course_id]."""
     with _print_lock:
         print(f"[{course_id}] {msg}")
-
-
-# ---------------------------------------------------------------------------
-# Caffeinate
-# ---------------------------------------------------------------------------
-
-def start_caffeinate():
-    """Prevent macOS from idle-sleeping; no-op on other platforms."""
-    if sys.platform != "darwin":
-        return
-    try:
-        subprocess.Popen(
-            ["caffeinate", "-i", "-w", str(os.getpid())],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        print("caffeinate active — system sleep prevented")
-    except FileNotFoundError:
-        print(
-            "WARNING: caffeinate not found; "
-            "system may sleep during long runs"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -804,206 +782,211 @@ def main():
             print(f"File not found: {path}")
             sys.exit(1)
 
-    start_caffeinate()
+    with keep.running(on_fail="warn") as wakepy_mode:
+        if wakepy_mode.active:
+            print(
+                "System sleep prevented for the duration of this run "
+                f"(wakepy, method: {wakepy_mode.active_method})."
+            )
 
-    print("Loading course and user data...")
-    courses = load_courses(courses_csv)
-    users = load_users(users_csv)
-    total_users = sum(len(v) for v in users.values())
-    print(
-        f"  {len(courses)} course(s), "
-        f"{total_users:,} user enrollment(s)."
-    )
-
-    # Resume detection
-    courses_csv_abs = os.path.abspath(courses_csv)
-    users_csv_abs = os.path.abspath(users_csv)
-    prior = load_state(courses_csv_abs, users_csv_abs)
-
-    if prior:
-        completed_ids, prev_ts = prior
-        RUN_TIMESTAMP = prev_ts
+        print("Loading course and user data...")
+        courses = load_courses(courses_csv)
+        users = load_users(users_csv)
+        total_users = sum(len(v) for v in users.values())
         print(
-            f"Resuming run {prev_ts}: "
-            f"{len(completed_ids)} of {len(courses)} course(s) "
-            "already completed."
+            f"  {len(courses)} course(s), "
+            f"{total_users:,} user enrollment(s)."
         )
-        resuming = True
-    else:
-        completed_ids = set()
-        resuming = False
-        print(f"Starting new run: {RUN_TIMESTAMP}")
 
-    courses_to_process = OrderedDict(
-        (cid, c) for cid, c in courses.items()
-        if cid not in completed_ids
-    )
-    skipped = len(courses) - len(courses_to_process)
-    if skipped:
-        print(f"  Skipping {skipped} already-completed course(s).")
+        # Resume detection
+        courses_csv_abs = os.path.abspath(courses_csv)
+        users_csv_abs = os.path.abspath(users_csv)
+        prior = load_state(courses_csv_abs, users_csv_abs)
 
-    # Open output CSVs (append if resuming, write if fresh)
-    mapping_f = members_f = entries_f = None
-
-    n_mapping = n_members = n_entries_written = 0
-    failed_courses: set = set()
-
-    try:
-        mode = "a" if resuming else "w"
-        mapping_f = open(
-            out_path("channel_mapping.csv"), mode,
-            newline="", encoding="utf-8"
-        )
-        members_f = open(
-            out_path("channel_members.csv"), mode,
-            newline="", encoding="utf-8"
-        )
-        entries_f = open(
-            out_path("published_entries.csv"), mode,
-            newline="", encoding="utf-8"
-        )
-        mapping_w = csv.DictWriter(mapping_f, fieldnames=MAPPING_FIELDS)
-        members_w = csv.DictWriter(members_f, fieldnames=MEMBERS_FIELDS)
-        entries_w = csv.DictWriter(entries_f, fieldnames=ENTRIES_FIELDS)
-
-        if not resuming:
-            mapping_w.writeheader()
-            members_w.writeheader()
-            entries_w.writeheader()
-
-        if not courses_to_process:
-            print("All courses already completed.")
+        if prior:
+            completed_ids, prev_ts = prior
+            RUN_TIMESTAMP = prev_ts
+            print(
+                f"Resuming run {prev_ts}: "
+                f"{len(completed_ids)} of {len(courses)} course(s) "
+                "already completed."
+            )
+            resuming = True
         else:
-            # Pre-flight duplicate check
-            print("Connecting to Kaltura (main thread)...")
-            main_client = create_client()
-            print("Checking for duplicate MediaSpace channel names...")
-            existing_names = get_existing_ms_channel_names(main_client)
+            completed_ids = set()
+            resuming = False
+            print(f"Starting new run: {RUN_TIMESTAMP}")
 
-            if resuming:
-                # Channels that exist but weren't recorded are assumed done
-                ghosts = [
-                    cid for cid in courses_to_process
-                    if cid in existing_names
-                ]
-                if ghosts:
-                    print(
-                        f"WARNING: {len(ghosts)} course(s) have channels "
-                        "in MediaSpace not recorded in the state file. "
-                        "Treating as completed and skipping:"
-                    )
-                    for g in ghosts:
-                        print(f"  - {g}")
-                        completed_ids.add(g)
-                    courses_to_process = OrderedDict(
-                        (cid, c) for cid, c in courses.items()
-                        if cid not in completed_ids
-                    )
+        courses_to_process = OrderedDict(
+            (cid, c) for cid, c in courses.items()
+            if cid not in completed_ids
+        )
+        skipped = len(courses) - len(courses_to_process)
+        if skipped:
+            print(f"  Skipping {skipped} already-completed course(s).")
+
+        # Open output CSVs (append if resuming, write if fresh)
+        mapping_f = members_f = entries_f = None
+
+        n_mapping = n_members = n_entries_written = 0
+        failed_courses: set = set()
+
+        try:
+            mode = "a" if resuming else "w"
+            mapping_f = open(
+                out_path("channel_mapping.csv"), mode,
+                newline="", encoding="utf-8"
+            )
+            members_f = open(
+                out_path("channel_members.csv"), mode,
+                newline="", encoding="utf-8"
+            )
+            entries_f = open(
+                out_path("published_entries.csv"), mode,
+                newline="", encoding="utf-8"
+            )
+            mapping_w = csv.DictWriter(mapping_f, fieldnames=MAPPING_FIELDS)
+            members_w = csv.DictWriter(members_f, fieldnames=MEMBERS_FIELDS)
+            entries_w = csv.DictWriter(entries_f, fieldnames=ENTRIES_FIELDS)
+
+            if not resuming:
+                mapping_w.writeheader()
+                members_w.writeheader()
+                entries_w.writeheader()
+
+            if not courses_to_process:
+                print("All courses already completed.")
             else:
-                conflicts = [
-                    cid for cid in courses_to_process
-                    if cid in existing_names
-                ]
-                if conflicts:
-                    print(
-                        "\nERROR: The following channel names already "
-                        "exist in MediaSpace:"
-                    )
-                    for c in conflicts:
-                        print(f"  - {c}")
-                    print(
-                        "\nNo changes were made. "
-                        "Resolve conflicts and re-run."
-                    )
-                    sys.exit(1)
+                # Pre-flight duplicate check
+                print("Connecting to Kaltura (main thread)...")
+                main_client = create_client()
+                print("Checking for duplicate MediaSpace channel names...")
+                existing_names = get_existing_ms_channel_names(main_client)
 
-            print(
-                f"\nStarting migration with {THREAD_COUNT} course "
-                f"thread(s), {MEMBER_THREADS} member thread(s) each..."
-            )
-
-            done_count = len(completed_ids)
-            total_count = len(courses)
-
-            with ThreadPoolExecutor(
-                max_workers=THREAD_COUNT
-            ) as executor:
-                futures = {
-                    executor.submit(
-                        process_course, cid, course,
-                        users.get(cid, []),
-                    ): cid
-                    for cid, course in courses_to_process.items()
-                }
-                for future in as_completed(futures):
-                    cid = futures[future]
-                    try:
-                        result = future.result()
-
-                        # Write rows immediately — no accumulation
-                        mapping_w.writerow(result["mapping"])
-                        members_w.writerows(result["members"])
-                        entries_w.writerows(result["entries"])
-                        mapping_f.flush()
-                        members_f.flush()
-                        entries_f.flush()
-
-                        n_mapping += 1
-                        n_members += len(result["members"])
-                        n_entries_written += len(result["entries"])
-
-                        completed_ids.add(cid)
-                        # State file now tiny: just completed IDs
-                        save_state(
-                            completed_ids,
-                            courses_csv_abs,
-                            users_csv_abs,
+                if resuming:
+                    # Channels that exist but weren't recorded are assumed done
+                    ghosts = [
+                        cid for cid in courses_to_process
+                        if cid in existing_names
+                    ]
+                    if ghosts:
+                        print(
+                            f"WARNING: {len(ghosts)} course(s) have channels "
+                            "in MediaSpace not recorded in the state file. "
+                            "Treating as completed and skipping:"
                         )
-                        done_count += 1
-                        with _print_lock:
-                            print(
-                                f"[{cid}] Done "
-                                f"({done_count}/{total_count})"
+                        for g in ghosts:
+                            print(f"  - {g}")
+                            completed_ids.add(g)
+                        courses_to_process = OrderedDict(
+                            (cid, c) for cid, c in courses.items()
+                            if cid not in completed_ids
+                        )
+                else:
+                    conflicts = [
+                        cid for cid in courses_to_process
+                        if cid in existing_names
+                    ]
+                    if conflicts:
+                        print(
+                            "\nERROR: The following channel names already "
+                            "exist in MediaSpace:"
+                        )
+                        for c in conflicts:
+                            print(f"  - {c}")
+                        print(
+                            "\nNo changes were made. "
+                            "Resolve conflicts and re-run."
+                        )
+                        sys.exit(1)
+
+                print(
+                    f"\nStarting migration with {THREAD_COUNT} course "
+                    f"thread(s), {MEMBER_THREADS} member thread(s) each..."
+                )
+
+                done_count = len(completed_ids)
+                total_count = len(courses)
+
+                with ThreadPoolExecutor(
+                    max_workers=THREAD_COUNT
+                ) as executor:
+                    futures = {
+                        executor.submit(
+                            process_course, cid, course,
+                            users.get(cid, []),
+                        ): cid
+                        for cid, course in courses_to_process.items()
+                    }
+                    for future in as_completed(futures):
+                        cid = futures[future]
+                        try:
+                            result = future.result()
+
+                            # Write rows immediately — no accumulation
+                            mapping_w.writerow(result["mapping"])
+                            members_w.writerows(result["members"])
+                            entries_w.writerows(result["entries"])
+                            mapping_f.flush()
+                            members_f.flush()
+                            entries_f.flush()
+
+                            n_mapping += 1
+                            n_members += len(result["members"])
+                            n_entries_written += len(result["entries"])
+
+                            completed_ids.add(cid)
+                            # State file now tiny: just completed IDs
+                            save_state(
+                                completed_ids,
+                                courses_csv_abs,
+                                users_csv_abs,
                             )
-                    except Exception as exc:
-                        failed_courses.add(cid)
-                        with _print_lock:
-                            print(f"[{cid}] FAILED: {exc}")
+                            done_count += 1
+                            with _print_lock:
+                                print(
+                                    f"[{cid}] Done "
+                                    f"({done_count}/{total_count})"
+                                )
+                        except Exception as exc:
+                            failed_courses.add(cid)
+                            with _print_lock:
+                                print(f"[{cid}] FAILED: {exc}")
 
-    finally:
-        for fh in (mapping_f, members_f, entries_f):
-            if fh is not None:
-                try:
-                    fh.close()
-                except Exception:
-                    pass
+        finally:
+            for fh in (mapping_f, members_f, entries_f):
+                if fh is not None:
+                    try:
+                        fh.close()
+                    except Exception:
+                        pass
 
-        print(f"\n{'=' * 60}")
-        print("Output files:")
-        print(f"  {out_path('channel_mapping.csv')}")
-        print(f"  {out_path('channel_members.csv')}")
-        print(f"  {out_path('published_entries.csv')}")
+            print(f"\n{'=' * 60}")
+            print("Output files:")
+            print(f"  {out_path('channel_mapping.csv')}")
+            print(f"  {out_path('channel_members.csv')}")
+            print(f"  {out_path('published_entries.csv')}")
 
-        if failed_courses:
+            if failed_courses:
+                print(
+                    f"\n  {len(failed_courses)} course(s) failed:"
+                )
+                for cid in sorted(failed_courses):
+                    print(f"    - {cid}")
+                print(
+                    "  State file preserved. Re-run with the same input "
+                    "files to retry failed courses."
+                )
+            else:
+                if os.path.exists(STATE_FILE):
+                    os.remove(STATE_FILE)
+                print("\n  State file removed (run complete).")
+
             print(
-                f"\n  {len(failed_courses)} course(s) failed:"
+                f"\nSummary: {n_mapping} channel(s), "
+                f"{n_members:,} member record(s), "
+                f"{n_entries_written:,} entry publication(s)."
             )
-            for cid in sorted(failed_courses):
-                print(f"    - {cid}")
-            print(
-                "  State file preserved. Re-run with the same input "
-                "files to retry failed courses."
-            )
-        else:
-            if os.path.exists(STATE_FILE):
-                os.remove(STATE_FILE)
-            print("\n  State file removed (run complete).")
-
-        print(
-            f"\nSummary: {n_mapping} channel(s), "
-            f"{n_members:,} member record(s), "
-            f"{n_entries_written:,} entry publication(s)."
-        )
 
 
 if __name__ == "__main__":

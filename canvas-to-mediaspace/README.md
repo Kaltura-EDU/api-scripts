@@ -23,7 +23,7 @@ The script supports configurable concurrency, automatic retry with exponential b
 - The following Python packages:
 
 ```
-pip install KalturaApiClient python-dotenv pytz
+pip install KalturaApiClient python-dotenv pytz wakepy
 ```
 
 ## Setup

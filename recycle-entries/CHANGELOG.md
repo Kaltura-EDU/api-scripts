@@ -1,6 +1,10 @@
 # Changelog – recycle-entries.py
 
-## [1.0.0] – 2026-09-24
+## [v1.0.1] - 2026-09-24 
+
+Updated to replace macOS-only `caffeinate` with cross-platform `wakepy` library.
+
+## [v1.0.0] – 2026-09-24
 
 Initial public release. The script was used internally at UC San Diego in March and April 2026 to recycle more than 40,000 entries before it was published here.
 

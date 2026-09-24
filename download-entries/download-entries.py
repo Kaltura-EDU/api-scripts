@@ -26,7 +26,6 @@ import errno
 import getpass
 import os
 import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -42,6 +41,7 @@ from KalturaClient.Plugins.Core import (
 )
 from KalturaClient.exceptions import KalturaException, KalturaClientException
 from dotenv import load_dotenv
+from wakepy import keep
 import re
 
 # Load configuration from a .env file next to this script (if present), so it is
@@ -828,17 +828,14 @@ def main():
                     print("Download cancelled. No files were downloaded this run.")
 
             if proceed:
-                caffeinate = None
-                if sys.platform == "darwin":
-                    try:
-                        caffeinate = subprocess.Popen(["caffeinate", "-i"])
-                        print("☕ Keeping your Mac awake for the duration of the download.")
-                    except FileNotFoundError:
-                        pass
-
                 total_failures = 0
                 disk_full_path = None
-                try:
+                with keep.running(on_fail="warn") as wakepy_mode:
+                    if wakepy_mode.active:
+                        print(
+                            "☕ Keeping your system awake for the duration of "
+                            f"the download (wakepy, method: {wakepy_mode.active_method})."
+                        )
                     for label, folder, entries in batch_results:
                         if not entries:
                             print(f"No entries found for '{label}'. Skipping.")
@@ -891,10 +888,6 @@ def main():
                         if DISK_FULL.is_set():
                             disk_full_path = folder
                             break
-                finally:
-                    if caffeinate:
-                        caffeinate.terminate()
-
                 if disk_full_path is not None:
                     _abort_disk_full(disk_full_path)
                     sys.exit(1)

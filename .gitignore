@@ -3,6 +3,9 @@
 /delete-entries/*.csv
 /report-count-duration/*.csv
 
+# local-only instructions file
+/CLAUDE.md
+
 ### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/

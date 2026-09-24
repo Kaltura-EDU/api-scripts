@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.2] - 2026-09-24
+
+### Changed
+- Replaced macOS-only `caffeinate` with the cross-platform `wakepy` library to prevent sleep during runs. Keeps the system awake on Windows and Linux as well as macOS. Requires `wakepy` (added to `requirements.txt`).
+
 ## [1.0.1] - 2026-05-08
 
 ### Fixed

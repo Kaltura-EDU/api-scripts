@@ -990,7 +990,7 @@ def main():
         print("-" * 80 + "\n")
 
         copied_entry = copy_entry(
-            client_source, client_dest, entry, DEST_PID,
+            client_source, client_dest, entry, dest_pid,
             DESTINATION_COEDITORS, DESTINATION_COPUBLISHERS, DESTINATION_TAG,
             csv_entries, entry_id_mapping
         )
