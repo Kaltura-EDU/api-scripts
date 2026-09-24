@@ -1,5 +1,13 @@
 # Changelog
 
+## [v2.1.0] - 2026-09-24
+### Added
+- New option **[4]**: copy entries listed in a CSV file in the `input` folder. `INPUT_FILENAME` in `.env` sets the default file, and `COLUMN_HEADER_ENTRY_ID` (default `Entry ID`) names the column. Blank rows and duplicate IDs are ignored, and IDs not found in the source partner are listed and skipped.
+- `input/` and `output/` folders are gitignored.
+
+### Changed
+- Entry ID lookups (options 3 and 4) run in batches of 100, so long lists work.
+
 ## [v2.0.0] - 2026-09-24
 ### Changed
 - **Settings now live in a `.env` file** instead of the Python file. Copy `.env.example` to `.env` to get started (see README). The source and destination partner IDs can be set there as `KALTURA_SOURCE_PARTNER_ID` and `KALTURA_DEST_PARTNER_ID`; if left blank, the script asks for them.

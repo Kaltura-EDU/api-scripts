@@ -2,7 +2,7 @@
 
 Copies videos (and other media) from one Kaltura partner ID (PID) to another: for example, from a test instance to production, or from one campus instance to another. It copies each entry's media along with its thumbnails, captions and audio descriptions, attachments, chapters and slides, hotspots, and quiz questions. Multi-stream recordings keep their parent/child structure.
 
-You choose which entries to copy by **tag**, by **category ID**, or by a **list of entry IDs**. The script shows its progress as it works and saves a spreadsheet (CSV) that maps each original entry to its new copy.
+You choose which entries to copy by **tag**, by **category ID**, by a **list of entry IDs**, or with a **CSV file of entry IDs**. The script shows its progress as it works and saves a spreadsheet (CSV) that maps each original entry to its new copy.
 
 # What gets copied
 
@@ -30,7 +30,17 @@ It may not cover every configuration out there. Don't hesitate to reach out to m
 4. Open a command-line application (e.g. Terminal on a Mac or Command Prompt on Windows) and navigate to this folder.
 5. Type `pip install -r requirements.txt` to install what the script needs. You only need to do this once.
 6. Type `python3 duplicate-entries-across-pids.py` to run the script.
-7. Follow the onscreen prompts. The script asks for the **Administrator secret** of both partners (what you type stays hidden), how you want to choose entries, and then asks you to confirm before it copies anything.
+7. Follow the onscreen prompts. The script asks for the **Administrator secret** of both partners (what you type stays hidden), how you want to choose entries (see below), and then asks you to confirm before it copies anything.
+
+# Copying a list of entries from a file
+
+For more than a handful of entries, a file is easier than pasting IDs:
+
+1. Save a CSV with a column of entry IDs headed **Entry ID** in the `input` folder next to the script. A CSV with just one column works whatever its header says; if your column has a different header, set `COLUMN_HEADER_ENTRY_ID` in `.env`.
+2. Run the script and choose **[4] A CSV file of entry IDs in the input folder**.
+3. Type the file's name (e.g. `entries.csv`). If you set `INPUT_FILENAME` in `.env`, just press Enter.
+
+Blank rows and duplicate IDs are ignored. Any IDs that don't exist in the source partner are listed and skipped.
 
 # Setting up your `.env`
 
@@ -61,6 +71,8 @@ None. If you leave `KALTURA_SOURCE_PARTNER_ID` and `KALTURA_DEST_PARTNER_ID` bla
 | `DESTINATION_COEDITORS` | *(blank)* | Co-editors for the new entries, comma-separated (e.g. `user1,user2`). |
 | `DESTINATION_COPUBLISHERS` | *(blank)* | Co-publishers for the new entries, comma-separated. |
 | `DESTINATION_TAG` | `duplicated_entry` | Tag(s) added to every new entry, on top of its existing tags. |
+| `INPUT_FILENAME` | *(blank)* | The CSV in the `input` folder to use for option 4. Pressing Enter at the prompt uses it. |
+| `COLUMN_HEADER_ENTRY_ID` | `Entry ID` | The header of the entry ID column in your input CSV. |
 | `REQUEST_TIMEOUT`, `MAX_NETWORK_RETRIES`, `NETWORK_RETRY_DELAY` | `120`, `5`, `5` | How patiently the script handles a slow or dropped connection. The defaults are fine for most people. |
 
 # The CSV report

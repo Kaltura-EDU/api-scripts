@@ -23,7 +23,7 @@ This script assumes access to admin-level Kaltura credentials (admin secret
 keys) for both the source and destination environments.
 
 Author: Galen Davis
-Last updated: September 24, 2026
+Last updated: September 24, 2026 (v2.1.0)
 """
 
 import csv
@@ -114,10 +114,22 @@ DESTINATION_COEDITORS = _env_list("DESTINATION_COEDITORS")
 DESTINATION_COPUBLISHERS = _env_list("DESTINATION_COPUBLISHERS")
 DESTINATION_TAG = ",".join(_env_list("DESTINATION_TAG"))
 
+# ---------- Input file (from .env) ----------
+# Optional CSV of entry IDs to copy, kept in the input/ folder next to this
+# script. Used when you choose "entry IDs from a file" at the prompt.
+INPUT_FILENAME = os.getenv("INPUT_FILENAME", "").strip()
+COLUMN_HEADER_ENTRY_ID = (
+    os.getenv("COLUMN_HEADER_ENTRY_ID", "").strip() or "Entry ID"
+)
+
 # Page size for every list call; results are paginated past this.
 PAGE_SIZE = 500
+# Entry IDs per idIn request when looking up a list of entries.
+ID_BATCH_SIZE = 100
 
-OUTPUT_DIR = Path(__file__).with_name("output")
+SCRIPT_DIR = Path(__file__).resolve().parent
+INPUT_DIR = SCRIPT_DIR / "input"
+OUTPUT_DIR = SCRIPT_DIR / "output"
 CSV_FILENAME = OUTPUT_DIR / (
     f"{datetime.now().strftime('%Y-%m-%d-%H%M')}_CrossInstanceDuplication.csv"
 )
@@ -212,8 +224,71 @@ def get_kaltura_client(partner_id, admin_secret):
     return client
 
 
+def resolve_input_path(filename):
+    # INPUT_FILENAME is a file inside input/. A leading "input/" is accepted
+    # too, since other scripts in this repo use that form.
+    path = Path(filename)
+    if path.parts and path.parts[0] == "input":
+        path = Path(*path.parts[1:])
+    return INPUT_DIR / path
+
+
+def read_entry_ids(input_path):
+    """Read entry IDs from the COLUMN_HEADER_ENTRY_ID column of a CSV.
+    A one-column file works whatever its header is."""
+    if not input_path.is_file():
+        print(
+            f"❌ Input file not found: {input_path}\n"
+            "   Put your CSV in the input folder next to this script and "
+            "check the file name."
+        )
+        return []
+
+    with open(input_path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        headers = reader.fieldnames or []
+        column = next(
+            (h for h in headers
+             if h.strip().lower() == COLUMN_HEADER_ENTRY_ID.lower()),
+            headers[0] if len(headers) == 1 else None
+        )
+        if column is None:
+            print(
+                f"❌ No \"{COLUMN_HEADER_ENTRY_ID}\" column in "
+                f"{input_path.name}.\n"
+                f"   Columns found: {', '.join(headers) or '(none)'}\n"
+                "   Set COLUMN_HEADER_ENTRY_ID in .env to the right column."
+            )
+            return []
+        entry_ids = [
+            (row.get(column) or "").strip() for row in reader
+        ]
+
+    # Drop blanks and duplicates, keeping the file's order
+    return list(dict.fromkeys(eid for eid in entry_ids if eid))
+
+
+def get_entries_by_ids(client, entry_ids):
+    """Look up a list of entry IDs in batches, reporting any not found."""
+    entries = []
+    for i in range(0, len(entry_ids), ID_BATCH_SIZE):
+        id_filter = KalturaBaseEntryFilter()
+        id_filter.idIn = ",".join(entry_ids[i:i + ID_BATCH_SIZE])
+        entries.extend(list_all(client.baseEntry.list, id_filter))
+
+    found = {entry.id for entry in entries}
+    missing = [eid for eid in entry_ids if eid not in found]
+    if missing:
+        print(
+            f"⚠️ {len(missing)} entry IDs were not found in the source "
+            f"partner and will be skipped: {', '.join(missing)}"
+        )
+    return entries
+
+
 def get_entries(client, method, identifier):
-    """Retrieve entries based on tag, category, or entry IDs."""
+    """Retrieve entries based on tag, category, entry IDs, or an input
+    file of entry IDs."""
     if not identifier:
         print("⚠️ No identifier provided. Exiting.")
         return []
@@ -226,15 +301,23 @@ def get_entries(client, method, identifier):
         filter.categoryAncestorIdIn = str(identifier)
         print(f"🔎 Searching entries under Category ID: {identifier}")
     elif method == "entry_ids":
-        filter.idIn = ",".join(
+        entry_ids = [
             eid.strip() for eid in identifier.split(",") if eid.strip()
-        )
+        ]
         print("🔎 Searching entries by specific IDs.")
+    elif method == "input_file":
+        input_path = resolve_input_path(identifier)
+        entry_ids = read_entry_ids(input_path)
+        if not entry_ids:
+            return []
+        print(f"🔎 Read {len(entry_ids)} entry IDs from {input_path.name}.")
     else:
         print("❌ Invalid method.")
         return []
 
     try:
+        if method in ("entry_ids", "input_file"):
+            return get_entries_by_ids(client, list(dict.fromkeys(entry_ids)))
         return list_all(client.baseEntry.list, filter)
     except Exception as e:
         print(f"❌ API error while retrieving entries: {e}")
@@ -1003,11 +1086,13 @@ def main():
     print("[1] A tag")
     print("[2] A category ID")
     print("[3] A comma-delimited list of entry IDs")
+    print("[4] A CSV file of entry IDs in the input folder")
 
     method_mapping = {
         "1": ("tag", "Enter the tag name: "),
         "2": ("category", "Enter the category ID: "),
-        "3": ("entry_ids", "Enter the entry IDs (comma-separated): ")
+        "3": ("entry_ids", "Enter the entry IDs (comma-separated): "),
+        "4": ("input_file", "Enter the file name in the input folder: ")
     }
 
     method_choice = input(
@@ -1016,11 +1101,18 @@ def main():
 
     # Validate user input and unpack method and prompt text
     if method_choice not in method_mapping:
-        print("Error: Invalid choice. Please enter 1, 2, or 3.")
+        print("Error: Invalid choice. Please enter 1, 2, 3, or 4.")
         return
 
     method, prompt_text = method_mapping[method_choice]
+    if method == "input_file" and INPUT_FILENAME:
+        # Enter accepts the file named in .env
+        prompt_text = (
+            f"Enter the file name in the input folder [{INPUT_FILENAME}]: "
+        )
     identifier = input(prompt_text).strip()
+    if method == "input_file" and not identifier:
+        identifier = INPUT_FILENAME
 
     # Ensure an identifier was provided
     if not identifier:
