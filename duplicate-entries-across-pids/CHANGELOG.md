@@ -1,5 +1,12 @@
 # Changelog
 
+## [v2.2.0] - 2026-09-24
+### Added
+- Choose entries in `.env` instead of at the prompt: set one of `INPUT_FILENAME`, `ENTRY_IDS`, `CATEGORY_ID`, or `TAG` and the script skips the menu. Leave them all blank and it asks, as before. If several are set, the first in that order wins, with a warning. The confirmation step still runs before anything is copied.
+
+### Changed
+- Setting `INPUT_FILENAME` now selects the file directly. Previously it was only the default answer when you picked option 4.
+
 ## [v2.1.0] - 2026-09-24
 ### Added
 - New option **[4]**: copy entries listed in a CSV file in the `input` folder. `INPUT_FILENAME` in `.env` sets the default file, and `COLUMN_HEADER_ENTRY_ID` (default `Entry ID`) names the column. Blank rows and duplicate IDs are ignored, and IDs not found in the source partner are listed and skipped.

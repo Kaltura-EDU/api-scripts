@@ -23,7 +23,7 @@ This script assumes access to admin-level Kaltura credentials (admin secret
 keys) for both the source and destination environments.
 
 Author: Galen Davis
-Last updated: September 24, 2026 (v2.1.0)
+Last updated: September 24, 2026 (v2.2.0)
 """
 
 import csv
@@ -114,10 +114,15 @@ DESTINATION_COEDITORS = _env_list("DESTINATION_COEDITORS")
 DESTINATION_COPUBLISHERS = _env_list("DESTINATION_COPUBLISHERS")
 DESTINATION_TAG = ",".join(_env_list("DESTINATION_TAG"))
 
-# ---------- Input file (from .env) ----------
-# Optional CSV of entry IDs to copy, kept in the input/ folder next to this
-# script. Used when you choose "entry IDs from a file" at the prompt.
+# ---------- Which entries to copy (from .env) ----------
+# Set ONE of these to skip the menu; leave all blank to be asked. If several
+# are set, the first in this order wins: INPUT_FILENAME, ENTRY_IDS,
+# CATEGORY_ID, TAG. INPUT_FILENAME is a CSV of entry IDs in the input/ folder
+# next to this script.
 INPUT_FILENAME = os.getenv("INPUT_FILENAME", "").strip()
+ENTRY_IDS = os.getenv("ENTRY_IDS", "").strip()
+CATEGORY_ID = os.getenv("CATEGORY_ID", "").strip()
+TAG = os.getenv("TAG", "").strip()
 COLUMN_HEADER_ENTRY_ID = (
     os.getenv("COLUMN_HEADER_ENTRY_ID", "").strip() or "Entry ID"
 )
@@ -1061,27 +1066,32 @@ def prompt_admin_secret(label):
     return secret
 
 
-def main():
-    for key in ("ADMIN_SECRET", "SOURCE_ADMIN_SECRET", "DEST_ADMIN_SECRET",
-                "KALTURA_SOURCE_ADMIN_SECRET", "KALTURA_DEST_ADMIN_SECRET"):
-        if os.getenv(key):
-            print(
-                f"⚠️ {key} is set in your .env or environment and is being "
-                "ignored. Admin secrets are always typed in at runtime; "
-                "please delete it from .env."
-            )
+def selection_from_env():
+    """Return (method, identifier) for the entry selection set in .env, or
+    None if nothing is set."""
+    settings = [
+        ("INPUT_FILENAME", "input_file", INPUT_FILENAME),
+        ("ENTRY_IDS", "entry_ids", ENTRY_IDS),
+        ("CATEGORY_ID", "category", CATEGORY_ID),
+        ("TAG", "tag", TAG),
+    ]
+    chosen = [s for s in settings if s[2]]
+    if not chosen:
+        return None
 
-    # Prompt for source PID and Admin Secret
-    source_pid = prompt_partner_id(SOURCE_PARTNER_ID, "Source")
-    source_admin_secret = prompt_admin_secret("Source")
-    client_source = get_kaltura_client(source_pid, source_admin_secret)
+    name, method, identifier = chosen[0]
+    if len(chosen) > 1:
+        ignored = ", ".join(s[0] for s in chosen[1:])
+        print(
+            f"⚠️ More than one entry selection is set in .env. Using {name} "
+            f"and ignoring {ignored}."
+        )
+    print(f"\nSelecting entries by {name} from .env: {identifier}")
+    return method, identifier
 
-    # Prompt for destination PID and Admin Secret
-    dest_pid = prompt_partner_id(DEST_PARTNER_ID, "Destination")
-    dest_admin_secret = prompt_admin_secret("Destination")
-    client_dest = get_kaltura_client(dest_pid, dest_admin_secret)
 
-    # Ask the user how they want to select entries
+def prompt_for_selection():
+    """Ask how to select entries. Returns (method, identifier)."""
     print("\nWhat do you want to use to duplicate entries?")
     print("[1] A tag")
     print("[2] A category ID")
@@ -1102,19 +1112,33 @@ def main():
     # Validate user input and unpack method and prompt text
     if method_choice not in method_mapping:
         print("Error: Invalid choice. Please enter 1, 2, 3, or 4.")
-        return
+        raise SystemExit(1)
 
     method, prompt_text = method_mapping[method_choice]
-    if method == "input_file" and INPUT_FILENAME:
-        # Enter accepts the file named in .env
-        prompt_text = (
-            f"Enter the file name in the input folder [{INPUT_FILENAME}]: "
-        )
-    identifier = input(prompt_text).strip()
-    if method == "input_file" and not identifier:
-        identifier = INPUT_FILENAME
+    return method, input(prompt_text).strip()
 
-    # Ensure an identifier was provided
+
+def main():
+    for key in ("ADMIN_SECRET", "SOURCE_ADMIN_SECRET", "DEST_ADMIN_SECRET",
+                "KALTURA_SOURCE_ADMIN_SECRET", "KALTURA_DEST_ADMIN_SECRET"):
+        if os.getenv(key):
+            print(
+                f"⚠️ {key} is set in your .env or environment and is being "
+                "ignored. Admin secrets are always typed in at runtime; "
+                "please delete it from .env."
+            )
+
+    # Prompt for source PID and Admin Secret
+    source_pid = prompt_partner_id(SOURCE_PARTNER_ID, "Source")
+    source_admin_secret = prompt_admin_secret("Source")
+    client_source = get_kaltura_client(source_pid, source_admin_secret)
+
+    # Prompt for destination PID and Admin Secret
+    dest_pid = prompt_partner_id(DEST_PARTNER_ID, "Destination")
+    dest_admin_secret = prompt_admin_secret("Destination")
+    client_dest = get_kaltura_client(dest_pid, dest_admin_secret)
+
+    method, identifier = selection_from_env() or prompt_for_selection()
     if not identifier:
         print("Error: You must provide a valid identifier.")
         return

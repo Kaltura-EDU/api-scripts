@@ -30,15 +30,19 @@ It may not cover every configuration out there. Don't hesitate to reach out to m
 4. Open a command-line application (e.g. Terminal on a Mac or Command Prompt on Windows) and navigate to this folder.
 5. Type `pip install -r requirements.txt` to install what the script needs. You only need to do this once.
 6. Type `python3 duplicate-entries-across-pids.py` to run the script.
-7. Follow the onscreen prompts. The script asks for the **Administrator secret** of both partners (what you type stays hidden), how you want to choose entries (see below), and then asks you to confirm before it copies anything.
+7. Follow the onscreen prompts. The script asks for the **Administrator secret** of both partners (what you type stays hidden), how you want to choose entries (unless `.env` already says; see below), and then asks you to confirm before it copies anything.
 
-# Copying a list of entries from a file
+# Choosing which entries to copy
+
+When you run the script, it asks how to choose entries: by tag, by category ID, by a list of entry IDs, or with a CSV file. To skip that question, for example when you rerun the same batch, set **one** of `INPUT_FILENAME`, `ENTRY_IDS`, `CATEGORY_ID`, or `TAG` in `.env`. The script still shows how many entries it found and asks you to confirm before copying anything.
+
+## Copying a list of entries from a file
 
 For more than a handful of entries, a file is easier than pasting IDs:
 
 1. Save a CSV with a column of entry IDs headed **Entry ID** in the `input` folder next to the script. A CSV with just one column works whatever its header says; if your column has a different header, set `COLUMN_HEADER_ENTRY_ID` in `.env`.
 2. Run the script and choose **[4] A CSV file of entry IDs in the input folder**.
-3. Type the file's name (e.g. `entries.csv`). If you set `INPUT_FILENAME` in `.env`, just press Enter.
+3. Type the file's name (e.g. `entries.csv`). Or set `INPUT_FILENAME=entries.csv` in `.env` and the script uses it without asking.
 
 Blank rows and duplicate IDs are ignored. Any IDs that don't exist in the source partner are listed and skipped.
 
@@ -55,7 +59,7 @@ The `.env` file holds your settings, so you never have to edit the Python file.
 
 ## Required settings
 
-None. If you leave `KALTURA_SOURCE_PARTNER_ID` and `KALTURA_DEST_PARTNER_ID` blank, the script asks for them when it runs. Filling them in just saves typing.
+None. Anything you leave blank (the partner IDs, which entries to copy) the script asks for when it runs. Filling them in just saves typing.
 
 ## Optional settings
 
@@ -71,7 +75,10 @@ None. If you leave `KALTURA_SOURCE_PARTNER_ID` and `KALTURA_DEST_PARTNER_ID` bla
 | `DESTINATION_COEDITORS` | *(blank)* | Co-editors for the new entries, comma-separated (e.g. `user1,user2`). |
 | `DESTINATION_COPUBLISHERS` | *(blank)* | Co-publishers for the new entries, comma-separated. |
 | `DESTINATION_TAG` | `duplicated_entry` | Tag(s) added to every new entry, on top of its existing tags. |
-| `INPUT_FILENAME` | *(blank)* | The CSV in the `input` folder to use for option 4. Pressing Enter at the prompt uses it. |
+| `INPUT_FILENAME` | *(blank)* | Copy the entries listed in this CSV in the `input` folder, without asking. |
+| `ENTRY_IDS` | *(blank)* | Copy these entries (comma-separated IDs), without asking. |
+| `CATEGORY_ID` | *(blank)* | Copy every entry in this category and its subcategories, without asking. |
+| `TAG` | *(blank)* | Copy every entry with this tag, without asking. |
 | `COLUMN_HEADER_ENTRY_ID` | `Entry ID` | The header of the entry ID column in your input CSV. |
 | `REQUEST_TIMEOUT`, `MAX_NETWORK_RETRIES`, `NETWORK_RETRY_DELAY` | `120`, `5`, `5` | How patiently the script handles a slow or dropped connection. The defaults are fine for most people. |
 
