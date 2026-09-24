@@ -1,2 +1,6 @@
-KalturaApiClient
+# 22.0.0+ required: audio descriptions are copied with their caption-asset
+# `usage` field, which older SDKs silently drop.
+KalturaApiClient>=22.0.0
 lxml
+python-dotenv
+requests
