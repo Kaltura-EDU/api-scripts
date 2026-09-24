@@ -59,7 +59,7 @@ from KalturaClient.exceptions import KalturaException
 # DEST_ADMIN_SECRET = "" DO NOT USE--script will prompt for this
 COPY_QUIZ_ANSWERS = False
 COPY_ASR_CAPTIONS = True
-CAPTION_LABEL = "English"
+CAPTION_LABEL = "English (auto-generated)"
 COPY_ATTACHMENTS = True
 DESTINATION_OWNER = ""
 DESTINATION_COEDITORS = ""
