@@ -41,7 +41,7 @@ After each batch of downloads completes, the script asks whether you'd like to d
 - **Subdirectory option**: when multiple search terms are entered for tags, category IDs/names, or owner IDs, optionally downloads each term's results into its own named subfolder with its own CSV report
 - **Multithreaded downloads**: uses a configurable thread pool (default: 5 workers) for fast parallel downloads
 - **Download-more loop**: after each run completes, offers the option to download another batch without restarting the script or re-entering credentials
-- **Caffeinate scoped to active downloads**: prevents macOS from sleeping during a download run; terminates between sessions
+- **Sleep prevention scoped to active downloads**: prevents the computer (macOS, Windows, or Linux) from sleeping during a download run; releases automatically between sessions
 - **Retry logic**: API calls (entry listing, flavor URL lookups, child entry lookups) and individual entry downloads all retry automatically with exponential backoff on failure
 - **Filters out non-media entries** (e.g., playlists) automatically
 - **`.env` configuration**: output folder, worker count, retry count, filename cleanup, and filename options are all set in a `.env` file (Partner ID too, optionally); the Admin Secret is always prompted, never stored

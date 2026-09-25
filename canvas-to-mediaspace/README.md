@@ -8,7 +8,7 @@ Bulk-migrates Canvas media galleries to Kaltura MediaSpace channels. For each co
 4. Publishes all associated media entries to the new channel
 5. Writes three output CSVs: channel mapping, member assignments, and published entries
 
-The script supports configurable concurrency, automatic retry with exponential backoff, resume-on-interrupt, and macOS sleep prevention for long runs.
+The script supports configurable concurrency, automatic retry with exponential backoff, resume-on-interrupt, and cross-platform (macOS, Windows, Linux) sleep prevention for long runs.
 
 ---
 
