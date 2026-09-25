@@ -2,4 +2,4 @@ KalturaApiClient
 lxml
 requests
 python-dotenv
-wakepy
+wakepy>=1.0.0
