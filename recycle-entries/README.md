@@ -79,7 +79,7 @@ python3 recycle-entries.py
 python3 recycle-entries.py
 ```
 
-On a Mac, the script keeps the computer from sleeping while it runs, so long runs aren't interrupted. The display can still turn off.
+The script keeps the computer from sleeping while it runs (macOS, Windows, and Linux), so long runs aren't interrupted. The display can still turn off.
 
 ## Output
 

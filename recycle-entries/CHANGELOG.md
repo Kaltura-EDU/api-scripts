@@ -1,6 +1,6 @@
 # Changelog – recycle-entries.py
 
-## [v1.0.1] - 2026-09-24 
+## [v1.0.1] – 2026-09-24
 
 Updated to replace macOS-only `caffeinate` with cross-platform `wakepy` library.
 
