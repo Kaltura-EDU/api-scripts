@@ -46,7 +46,8 @@ import re
 
 # Load configuration from a .env file next to this script (if present), so it is
 # found no matter which directory the script is run from.
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
 
 
 def _env_bool(name, default):
@@ -68,7 +69,15 @@ def _env_int(name, default, minimum=1):
 # The Admin Secret is NEVER read from .env — it is always prompted at runtime.
 # PARTNER_ID may live in .env (it is not secret); if blank, it is prompted.
 PARTNER_ID = os.getenv("PARTNER_ID", "").strip()
-DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER", "output").strip() or "output"
+# A relative DOWNLOAD_FOLDER is resolved against the script's own directory (not
+# the current working directory), so output always lands next to the script no
+# matter where it's launched from. An absolute path (e.g. an external drive) is
+# used as given.
+_download_folder = os.getenv("DOWNLOAD_FOLDER", "output").strip() or "output"
+DOWNLOAD_FOLDER = (
+    _download_folder if os.path.isabs(_download_folder)
+    else os.path.join(SCRIPT_DIR, _download_folder)
+)
 RETRY_ATTEMPTS = _env_int("RETRY_ATTEMPTS", 3)
 REMOVE_SUFFIX = _env_bool("REMOVE_SUFFIX", True)
 MAX_WORKERS = _env_int("MAX_WORKERS", 5)

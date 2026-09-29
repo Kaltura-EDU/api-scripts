@@ -1,5 +1,9 @@
 # Changelog – download-entries.py
 
+## [v2.1.2] – 2026-09-29
+### Fixed
+- The output folder is now always created next to the script, not in whatever directory the script was launched from. A relative `DOWNLOAD_FOLDER` (the default `output`) is resolved against the script's own directory, so running the script from a parent folder (e.g. `~/api-scripts`) no longer scatters an `output/` folder there. Absolute `DOWNLOAD_FOLDER` paths (e.g. an external drive) are still used exactly as given.
+
 ## [v2.1.1] – 2026-09-24
 ### Changed
 - Replaced macOS-only `caffeinate` with the cross-platform `wakepy` library to prevent sleep during downloads. Keeps the system awake on Windows and Linux as well as macOS. Requires `wakepy` (added to `requirements.txt`).
