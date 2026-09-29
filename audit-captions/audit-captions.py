@@ -11,9 +11,10 @@ runtime prompt (not a CLI flag):
     3. Entry ID(s), typed directly (comma-delimited)
 
 Output: a timestamped CSV in output/ with columns:
-    entryId, title, captions, EAD
-`captions` and `EAD` are "Y" or "N". If CHECK_EAD is off, the EAD column is
-left blank rather than "N", since it was never actually checked.
+    entryId, title, userId, captions, EAD
+`userId` is the entry owner's Kaltura user ID. `captions` and `EAD` are "Y"
+or "N". If CHECK_EAD is off, the EAD column is left blank rather than "N",
+since it was never actually checked.
 
 "Ready" means Kaltura has fully processed the caption/EAD file and it is
 usable (KalturaCaptionAssetStatus.READY) — not just uploaded or queued.
@@ -188,26 +189,28 @@ def get_thread_client(partner_id, admin_secret, thread_local):
     return client
 
 
-def get_entry_title(client, entry_id, rate_limiter):
-    """Fetch an entry's title, with retry. Returns None if the entry
-    could not be retrieved (e.g. ENTRY_ID_NOT_FOUND)."""
+def get_entry_details(client, entry_id, rate_limiter):
+    """Fetch an entry's title and owner user ID, with retry. Returns
+    (None, None) if the entry could not be retrieved (e.g.
+    ENTRY_ID_NOT_FOUND)."""
     for attempt in range(RETRY_ATTEMPTS):
         try:
             rate_limiter.wait()
-            return client.baseEntry.get(entry_id).name
+            entry = client.baseEntry.get(entry_id)
+            return entry.name, (entry.userId or "")
         except KalturaException as e:
             if getattr(e, "code", "") == "ENTRY_ID_NOT_FOUND":
-                return None
+                return None, None
             print(f"⚠️ Attempt {attempt + 1}: Failed to retrieve entry {entry_id}. Error: {e}")
             time.sleep(2 ** attempt)
     print(f"❌ Giving up on entry {entry_id} after {RETRY_ATTEMPTS} attempts.")
-    return None
+    return None, None
 
 
 def get_entries_by_tag(client, tags, rate_limiter):
-    """Returns a list of (entry_id, title) for entries matching the given
-    comma-delimited tags (OR logic). Title comes from the search result
-    directly — no extra per-entry lookup needed."""
+    """Returns a list of (entry_id, title, user_id) for entries matching the
+    given comma-delimited tags (OR logic). Title and owner come from the
+    search result directly — no extra per-entry lookup needed."""
     entry_filter = KalturaBaseEntryFilter()
     entry_filter.tagsMultiLikeOr = tags
     pager = KalturaFilterPager()
@@ -218,7 +221,7 @@ def get_entries_by_tag(client, tags, rate_limiter):
     while True:
         rate_limiter.wait()
         page = client.baseEntry.list(entry_filter, pager).objects
-        results.extend((e.id, e.name) for e in page)
+        results.extend((e.id, e.name, e.userId or "") for e in page)
         if len(page) < pager.pageSize:
             break
         pager.pageIndex += 1
@@ -279,21 +282,21 @@ def check_entry_captions(client, entry_id, check_ead, rate_limiter):
     return has_caption, (has_ead if check_ead else None)
 
 
-def process_row(partner_id, admin_secret, thread_local, entry_id, known_title, check_ead, rate_limiter):
-    """Runs in a worker thread: resolve title (if not already known) and
-    check caption/EAD readiness for one entry. Returns an output row dict.
-    Any unhandled error is caught here rather than left to propagate, so one
-    bad entry doesn't abort the whole batch."""
+def process_row(partner_id, admin_secret, thread_local, entry_id, known_title, known_user_id, check_ead, rate_limiter):
+    """Runs in a worker thread: resolve title/owner (if not already known)
+    and check caption/EAD readiness for one entry. Returns an output row
+    dict. Any unhandled error is caught here rather than left to propagate,
+    so one bad entry doesn't abort the whole batch."""
     try:
         client = get_thread_client(partner_id, admin_secret, thread_local)
 
-        title = known_title
+        title, user_id = known_title, known_user_id
         if title is None:
-            title = get_entry_title(client, entry_id, rate_limiter)
+            title, user_id = get_entry_details(client, entry_id, rate_limiter)
 
         if title is None:
             return {
-                "entryId": entry_id, "title": "[entry not found]",
+                "entryId": entry_id, "title": "[entry not found]", "userId": "",
                 "captions": "", "EAD": "",
             }
 
@@ -301,13 +304,14 @@ def process_row(partner_id, admin_secret, thread_local, entry_id, known_title, c
         return {
             "entryId": entry_id,
             "title": title,
+            "userId": user_id,
             "captions": "Y" if has_caption else "N",
             "EAD": "" if has_ead is None else ("Y" if has_ead else "N"),
         }
     except Exception as exc:
         print(f"❌ Unhandled error auditing {entry_id}: {exc}")
         return {
-            "entryId": entry_id, "title": "[error during audit]",
+            "entryId": entry_id, "title": "[error during audit]", "userId": "",
             "captions": "", "EAD": "",
         }
 
@@ -332,15 +336,16 @@ def main():
             break
         print("Error: Invalid choice. Please enter 1, 2, or 3.")
 
-    # Resolve to a list of (entry_id, title_or_None) — title is filled in
-    # later for methods where it isn't already known.
-    rows = []  # [(entry_id, title_or_None)]
+    # Resolve to a list of (entry_id, title_or_None, user_id_or_None) —
+    # title/user_id are filled in later for methods where they aren't
+    # already known.
+    rows = []  # [(entry_id, title_or_None, user_id_or_None)]
 
     if method == "csv":
         input_filename = INPUT_FILENAME or input("Enter path to input CSV: ").strip()
         column_header = COLUMN_HEADER_ENTRY_ID or input("Enter the entry ID column header: ").strip()
         entry_ids = get_entry_ids_from_csv(input_filename, column_header)
-        rows = [(eid, None) for eid in entry_ids]
+        rows = [(eid, None, None) for eid in entry_ids]
 
     elif method == "tag":
         tags = input("Enter tag(s): ").strip()
@@ -355,7 +360,7 @@ def main():
         if not entry_ids:
             print("Error: You must provide at least one entry ID.")
             sys.exit(1)
-        rows = [(eid, None) for eid in entry_ids]
+        rows = [(eid, None, None) for eid in entry_ids]
 
     if not rows:
         print("No entries found.")
@@ -369,7 +374,7 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     out_csv = output_dir / f"{run_ts}_caption_audit.csv"
 
-    fieldnames = ["entryId", "title", "captions", "EAD"]
+    fieldnames = ["entryId", "title", "userId", "captions", "EAD"]
     thread_local = threading.local()
     total = len(rows)
 
@@ -388,9 +393,9 @@ def main():
                 futures = {
                     pool.submit(
                         process_row, partner_id, admin_secret, thread_local,
-                        entry_id, known_title, CHECK_EAD, rate_limiter,
+                        entry_id, known_title, known_user_id, CHECK_EAD, rate_limiter,
                     ): entry_id
-                    for entry_id, known_title in rows
+                    for entry_id, known_title, known_user_id in rows
                 }
 
                 completed = 0

@@ -58,6 +58,7 @@ A timestamped CSV is written to `output/`, one row per audited entry:
 |--------|-------------|
 | `entryId` | The entry's ID |
 | `title` | The entry's name, or `[entry not found]` if the ID didn't resolve |
+| `userId` | The entry owner's Kaltura user ID. Blank if the entry has no owner |
 | `captions` | `Y` or `N` — has at least one ready caption asset that is **not** an EAD |
 | `EAD` | `Y` or `N` if `CHECK_EAD=true`; left **blank** if `CHECK_EAD` is off (blank means "not checked," not "no") |
 

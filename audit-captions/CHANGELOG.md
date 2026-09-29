@@ -1,5 +1,10 @@
 # Changelog – audit-captions.py
 
+## [v1.1.0] – 2026-09-29
+
+### Added
+- New `userId` output column, placed between `title` and `captions`: the entry owner's Kaltura user ID, blank if the entry has no owner.
+
 ## [v1.0.0] – 2026-09-28
 
 Initial release.
