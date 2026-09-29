@@ -1,0 +1,3 @@
+KalturaApiClient>=21.20.0
+python-dotenv
+wakepy>=1.0.0
