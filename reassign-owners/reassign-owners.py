@@ -2,27 +2,34 @@
 
 Supports three modes (set MODE in .env):
   owner_map  — CSV of old_user -> new_user; reassigns ALL entries owned by each old user.
-  entry_map  — CSV of entry_id -> owner_new; reassigns only the listed entry IDs.
+  entry_map  — CSV of entry_id -> owner_new (plus an optional owner_old column
+               for tracking); reassigns only the listed entry IDs.
   tag        — Finds all entries with a given tag (TAG) and reassigns them to TAG_NEW_OWNER.
 
 Uses baseEntry.list and baseEntry.update.
 Supports pagination, DRY_RUN, retries/backoff, and concurrency.
-Outputs timestamped CSV, summary, and error logs.
-Configured via .env.
+Reads the input CSV from input/ and writes timestamped CSV, summary, and
+error logs to output/, both next to this script.
+Configured via .env; the admin secret is always prompted at runtime.
 """
 
 from __future__ import annotations
 
 import csv
+import getpass
 import os
 import random
 import sys
 import time
 import threading
+import unicodedata
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
+
+import requests
 
 try:
     # Preferred: pip install python-dotenv
@@ -37,6 +44,7 @@ except ImportError:  # pragma: no cover
     ZoneInfo = None
 
 from KalturaClient import KalturaClient, KalturaConfiguration
+from KalturaClient.exceptions import KalturaClientException
 from KalturaClient.Plugins.Core import (
     KalturaBaseEntry,
     KalturaBaseEntryFilter,
@@ -45,20 +53,58 @@ from KalturaClient.Plugins.Core import (
 )
 
 
+# Input CSVs are read from input/ and results written to output/, both next
+# to this script, so it works no matter which folder it is launched from.
+SCRIPT_DIR = Path(__file__).resolve().parent
+INPUT_DIR = SCRIPT_DIR / "input"
+OUTPUT_DIR = SCRIPT_DIR / "output"
+
+# Never read from .env — set in main() via getpass.
+ADMIN_SECRET = ""
+
+# Network retry knobs (set from .env in main()).
+REQUEST_TIMEOUT = 120
+MAX_NETWORK_RETRIES = 5
+NETWORK_RETRY_DELAY = 5
+
+MODES = ("owner_map", "entry_map", "tag")
+
+
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    val = os.getenv(name)
-    if val is None:
+# Variables that had invisible characters removed (reported in main()).
+CLEANED_VARS: List[str] = []
+
+
+def _clean(value: str) -> str:
+    """Drop invisible format characters such as zero-width spaces (U+200B).
+    They sneak in when IDs are copy-pasted from web pages or chat, and
+    Python's strip() keeps them, so a value that looks blank isn't."""
+    return "".join(c for c in value if unicodedata.category(c) != "Cf").strip()
+
+
+def env_str(name: str, default: str = "") -> str:
+    raw = os.getenv(name)
+    if raw is None:
         return default
-    return val.strip().lower() in {"1", "true", "yes", "y", "on"}
+    val = _clean(raw)
+    if val != raw.strip() and name not in CLEANED_VARS:
+        CLEANED_VARS.append(name)
+    return val
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    val = env_str(name)
+    if val == "":
+        return default
+    return val.lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _env_int(name: str, default: int) -> int:
-    val = os.getenv(name)
-    if val is None or val.strip() == "":
+    val = env_str(name)
+    if val == "":
         return default
     try:
         return int(val)
@@ -67,13 +113,50 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _env_float(name: str, default: float) -> float:
-    val = os.getenv(name)
-    if val is None or val.strip() == "":
+    val = env_str(name)
+    if val == "":
         return default
     try:
         return float(val)
     except ValueError:
         raise ValueError(f"Env var {name} must be a number (got {val!r}).")
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures (timeouts, connection resets). Kaltura raises those as
+    KalturaClientException, which is NOT a subclass of KalturaException, so
+    it is caught here separately; requests' own errors are covered too. A
+    real, well-formed API error (KalturaException) is never retried here."""
+    for attempt in range(1, MAX_NETWORK_RETRIES + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            KalturaClientException,
+            requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == MAX_NETWORK_RETRIES:
+                raise
+            delay = NETWORK_RETRY_DELAY * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{MAX_NETWORK_RETRIES} in {delay}s]",
+                flush=True,
+            )
+            time.sleep(delay)
+
+
+def resolve_input_path(filename: str) -> Path:
+    # INPUT_FILENAME is a file inside input/. A leading "input/" is accepted
+    # too, since other scripts in this repo use that form.
+    path = Path(filename)
+    if path.parts and path.parts[0] == "input":
+        path = Path(*path.parts[1:])
+    return INPUT_DIR / path
+
+
+def _prompt(question: str) -> str:
+    return _clean(input(question))
 
 
 def _timestamp_tttt(timezone_name: str) -> str:
@@ -91,7 +174,7 @@ def _timestamp_tttt(timezone_name: str) -> str:
 
 def _load_env() -> None:
     if load_dotenv is not None:
-        load_dotenv()
+        load_dotenv(SCRIPT_DIR / ".env")
 
 # NOTE: The Kaltura client object is not guaranteed to be thread-safe.
 # We use a lock to avoid concurrent access that can cause intermittent failures.
@@ -155,6 +238,19 @@ def _print_friendly_exception(exc: Exception, input_filename: str) -> None:
     # Friendly handling for the most common CSV header mistake.
     msg = str(exc)
     if isinstance(exc, ValueError) and "missing expected headers" in msg.lower():
+        mode = env_str("MODE").lower()
+        if mode == "owner_map":
+            example = (
+                f"{env_str('COLUMN_HEADER_OLD', 'old_username')},"
+                f"{env_str('COLUMN_HEADER_NEW', 'new_username')}"
+            )
+            env_names = "COLUMN_HEADER_OLD and COLUMN_HEADER_NEW"
+        else:
+            example = (
+                f"{env_str('COLUMN_HEADER_ENTRY_ID', 'entry_id')},"
+                f"{env_str('COLUMN_HEADER_OWNER', 'owner_new')}"
+            )
+            env_names = "COLUMN_HEADER_ENTRY_ID and COLUMN_HEADER_OWNER"
         print(msg, flush=True)
         print("\nWhat this usually means:", flush=True)
         print(
@@ -163,7 +259,7 @@ def _print_friendly_exception(exc: Exception, input_filename: str) -> None:
             flush=True,
         )
         print("\nExpected first row (example):", flush=True)
-        print("entry_id,owner_new", flush=True)
+        print(example, flush=True)
 
         # Try to show the first line of the file to make the issue obvious.
         try:
@@ -178,7 +274,7 @@ def _print_friendly_exception(exc: Exception, input_filename: str) -> None:
         print(
             "\nFix options:\n"
             "- Add/restore the header row, OR\n"
-            "- Set COLUMN_HEADER_ENTRY_ID and COLUMN_HEADER_OWNER in .env to match your headers.",
+            f"- Set {env_names} in .env to match your headers.",
             flush=True,
         )
         return
@@ -187,7 +283,8 @@ def _print_friendly_exception(exc: Exception, input_filename: str) -> None:
     print(msg, flush=True)
     if isinstance(exc, FileNotFoundError):
         print(
-            "\nTip: Confirm INPUT_FILENAME points to an existing CSV file.",
+            "\nTip: Put your CSV in the input folder next to this script and\n"
+            "check that INPUT_FILENAME in .env matches its name.",
             flush=True,
         )
     elif isinstance(exc, RuntimeError) and "Missing required env vars" in msg:
@@ -212,6 +309,8 @@ class MappingRow:
 class EntryMappingRow:
     entry_id: str
     new_user: str
+    # Optional: who the CSV says owns the entry now (owner_old column).
+    expected_old: str = ""
 
 
 @dataclass
@@ -222,6 +321,33 @@ class UpdateResult:
     owner_new: str
     success: bool
     error: Optional[str] = None
+    owner_expected: str = ""
+    note: str = ""
+
+
+OUTPUT_HEADERS = [
+    "entry_id",
+    "entry_name",
+    "owner_old",
+    "owner_expected",
+    "owner_new",
+    "success",
+    "error",
+    "note",
+]
+
+
+def _result_row(res: UpdateResult) -> List[str]:
+    return [
+        res.entry_id,
+        res.entry_name,
+        res.owner_old,
+        res.owner_expected,
+        res.owner_new,
+        "success" if res.success else "fail",
+        "" if res.success else (res.error or ""),
+        res.note,
+    ]
 
 
 # -----------------------------------------------------------------------------
@@ -230,20 +356,16 @@ class UpdateResult:
 
 
 def build_client() -> KalturaClient:
-    partner_id = os.getenv("PARTNER_ID")
-    admin_secret = os.getenv("ADMIN_SECRET")
-    user_id = os.getenv("USER_ID")
-    service_url = os.getenv("SERVICE_URL")
-    privileges = os.getenv("PRIVILEGES")
+    partner_id = env_str("PARTNER_ID")
+    user_id = env_str("USER_ID")
+    service_url = env_str("SERVICE_URL", "https://www.kaltura.com/")
+    privileges = env_str("PRIVILEGES", "all:*,disableentitlement")
 
     missing = [
         name
         for name, val in [
             ("PARTNER_ID", partner_id),
-            ("ADMIN_SECRET", admin_secret),
             ("USER_ID", user_id),
-            ("SERVICE_URL", service_url),
-            ("PRIVILEGES", privileges),
         ]
         if not val
     ]
@@ -255,15 +377,35 @@ def build_client() -> KalturaClient:
     config = KalturaConfiguration()
     config.serviceUrl = service_url
     config.partnerId = int(partner_id)
+    config.requestTimeout = REQUEST_TIMEOUT
     client = KalturaClient(config)
 
-    ks = client.session.start(
-        admin_secret,
-        user_id,
-        KalturaSessionType.ADMIN,
-        int(partner_id),
-        privileges=privileges,
-    )
+    try:
+        ks = call_with_retry(
+            client.session.start,
+            ADMIN_SECRET,
+            user_id,
+            KalturaSessionType.ADMIN,
+            int(partner_id),
+            privileges=privileges,
+        )
+    except Exception as e:
+        if getattr(e, "code", "") == "START_SESSION_ERROR":
+            print(
+                "\n❌ Could not log in to Kaltura. Partner ID "
+                f"[{partner_id}] and the Admin Secret were not accepted.\n"
+                "   Double-check both values — the secret must be the "
+                "Administrator secret (not the User secret),\n"
+                "   copied exactly from KMC → Settings → Integration Settings.\n"
+            )
+        elif type(e).__name__ == "KalturaClientException":
+            print(
+                "\n❌ Could not reach Kaltura to start a session.\n"
+                f"   {e}\n   Check your internet connection and try again.\n"
+            )
+        else:
+            print(f"\n❌ Could not start Kaltura session: {e}\n")
+        raise SystemExit(1)
     client.setKs(ks)
     return client
 
@@ -287,7 +429,7 @@ def read_mapping_csv(
         if reader.fieldnames is None:
             raise ValueError("Input CSV appears to have no header row.")
 
-        fieldnames = {h.strip(): h for h in reader.fieldnames}
+        fieldnames = {_clean(h): h for h in reader.fieldnames}
         if header_old not in fieldnames or header_new not in fieldnames:
             raise ValueError(
                 "Input CSV missing expected headers. "
@@ -296,8 +438,8 @@ def read_mapping_csv(
             )
 
         for i, row in enumerate(reader, start=2):
-            old_user = (row.get(fieldnames[header_old]) or "").strip()
-            new_user = (row.get(fieldnames[header_new]) or "").strip()
+            old_user = _clean(row.get(fieldnames[header_old]) or "")
+            new_user = _clean(row.get(fieldnames[header_new]) or "")
 
             if not old_user or not new_user:
                 raise ValueError(
@@ -338,6 +480,7 @@ def read_entry_mapping_csv(
     input_filename: str,
     header_entry_id: str,
     header_owner: str,
+    header_owner_old: str,
 ) -> List[EntryMappingRow]:
     if not os.path.exists(input_filename):
         raise FileNotFoundError(f"Input CSV not found: {input_filename}")
@@ -348,7 +491,7 @@ def read_entry_mapping_csv(
         if reader.fieldnames is None:
             raise ValueError("Input CSV appears to have no header row.")
 
-        fieldnames = {h.strip(): h for h in reader.fieldnames}
+        fieldnames = {_clean(h): h for h in reader.fieldnames}
         if header_entry_id not in fieldnames or header_owner not in fieldnames:
             raise ValueError(
                 "Input CSV missing expected headers. "
@@ -356,9 +499,19 @@ def read_entry_mapping_csv(
                 f"Found: {reader.fieldnames!r}"
             )
 
+        # The current-owner column is optional: when present, each entry's
+        # actual owner is checked against it and recorded in the output.
+        old_col = fieldnames.get(header_owner_old)
+        if old_col:
+            _print_progress(
+                f"Found optional {header_owner_old!r} column: current owners "
+                "will be checked against it."
+            )
+
         for i, row in enumerate(reader, start=2):
-            entry_id = (row.get(fieldnames[header_entry_id]) or "").strip()
-            new_user = (row.get(fieldnames[header_owner]) or "").strip()
+            entry_id = _clean(row.get(fieldnames[header_entry_id]) or "")
+            new_user = _clean(row.get(fieldnames[header_owner]) or "")
+            expected_old = _clean(row.get(old_col) or "") if old_col else ""
 
             if not entry_id or not new_user:
                 raise ValueError(
@@ -366,7 +519,13 @@ def read_entry_mapping_csv(
                     f"Row {i} has entry_id={entry_id!r}, owner_new={new_user!r}."
                 )
 
-            rows.append(EntryMappingRow(entry_id=entry_id, new_user=new_user))
+            rows.append(
+                EntryMappingRow(
+                    entry_id=entry_id,
+                    new_user=new_user,
+                    expected_old=expected_old,
+                )
+            )
 
     if not rows:
         raise ValueError("Input CSV has no mapping rows.")
@@ -437,7 +596,7 @@ def validate_user_ids(
             )
 
         try:
-            client.user.get(uid)
+            call_with_retry(client.user.get, uid)
         except Exception as exc:  # noqa: BLE001
             exc_str = str(exc)
             # Treat INVALID_USER_ID as a normal "doesn't exist" case.
@@ -486,7 +645,7 @@ def iter_entries_by_owner(
                 f"  Fetching page {page_index} for owner {owner_user_id!r}...",
                 flush=True,
             )
-        result = client.baseEntry.list(entry_filter, pager)
+        result = call_with_retry(client.baseEntry.list, entry_filter, pager)
 
         if total_count is None:
             total_count = int(getattr(result, "totalCount", 0) or 0)
@@ -541,7 +700,7 @@ def iter_entries_by_tag(
                 f"  Fetching page {page_index} for tag {tag!r}...",
                 flush=True,
             )
-        result = client.baseEntry.list(entry_filter, pager)
+        result = call_with_retry(client.baseEntry.list, entry_filter, pager)
 
         if total_count is None:
             total_count = int(getattr(result, "totalCount", 0) or 0)
@@ -597,7 +756,7 @@ def update_owner_with_retry(
             entry_update = KalturaBaseEntry()
             entry_update.userId = owner_new
             with _CLIENT_LOCK:
-                client.baseEntry.update(entry_id, entry_update)
+                call_with_retry(client.baseEntry.update, entry_id, entry_update)
             return UpdateResult(
                 entry_id=entry_id,
                 entry_name=entry_name,
@@ -627,17 +786,32 @@ def process_entry_mapping_row(
     client: KalturaClient,
     entry_id: str,
     owner_new: str,
+    expected_old: str,
+    skip_owner_mismatch: bool,
     dry_run: bool,
     max_retries: int,
     backoff_base_sec: float,
     request_delay_sec: float,
 ) -> UpdateResult:
-    """Fetch entry to get name/old owner, then update owner."""
+    """Fetch entry to get name/old owner, then update owner.
+
+    When the CSV gave an expected current owner (expected_old) and the entry
+    is actually owned by someone else, the row is flagged in the note column.
+    With skip_owner_mismatch it is also left unchanged.
+    """
     try:
         with _CLIENT_LOCK:
-            entry = client.baseEntry.get(entry_id)
+            entry = call_with_retry(client.baseEntry.get, entry_id)
         entry_name = getattr(entry, "name", "")
         owner_old = getattr(entry, "userId", "")
+
+        mismatch = bool(expected_old) and owner_old.lower() != expected_old.lower()
+        note = (
+            f"owner mismatch: CSV expected {expected_old!r}, "
+            f"actual owner is {owner_old!r}"
+            if mismatch
+            else ""
+        )
 
         # No-op (already the requested owner)
         if owner_old == owner_new:
@@ -647,9 +821,23 @@ def process_entry_mapping_row(
                 owner_old=owner_old,
                 owner_new=owner_new,
                 success=True,
+                owner_expected=expected_old,
+                note="already owned by owner_new; no change",
             )
 
-        return update_owner_with_retry(
+        if mismatch and skip_owner_mismatch:
+            return UpdateResult(
+                entry_id=entry_id,
+                entry_name=entry_name,
+                owner_old=owner_old,
+                owner_new=owner_new,
+                success=False,
+                error="skipped: " + note,
+                owner_expected=expected_old,
+                note=note + "; skipped (SKIP_OWNER_MISMATCH=true)",
+            )
+
+        result = update_owner_with_retry(
             client,
             entry_id,
             entry_name,
@@ -660,6 +848,9 @@ def process_entry_mapping_row(
             backoff_base_sec,
             request_delay_sec,
         )
+        result.owner_expected = expected_old
+        result.note = note
+        return result
     except Exception as exc:  # noqa: BLE001
         return UpdateResult(
             entry_id=entry_id,
@@ -668,6 +859,7 @@ def process_entry_mapping_row(
             owner_new=owner_new,
             success=False,
             error=str(exc),
+            owner_expected=expected_old,
         )
 
 
@@ -676,23 +868,87 @@ def process_entry_mapping_row(
 # -----------------------------------------------------------------------------
 
 
+def _choose_mode() -> str:
+    """MODE from .env, or ask when it is blank."""
+    mode = env_str("MODE").lower()
+    if mode:
+        if mode not in MODES:
+            raise ValueError("MODE must be 'owner_map', 'entry_map', or 'tag'.")
+        _print_progress(f"Using MODE={mode} from .env.")
+        return mode
+
+    print(
+        "\nHow do you want to pick the entries to reassign?\n"
+        "  1) owner_map — CSV of old user -> new user "
+        "(moves ALL of each old user's entries)\n"
+        "  2) entry_map — CSV of entry ID -> new owner "
+        "(moves only the listed entries)\n"
+        "  3) tag       — every entry with a tag goes to one new owner",
+        flush=True,
+    )
+    while True:
+        answer = _prompt("Enter 1, 2, or 3: ").lower()
+        if answer in {"1", "2", "3"}:
+            return MODES[int(answer) - 1]
+        if answer in MODES:
+            return answer
+        print("Please enter 1, 2, or 3.", flush=True)
+
+
+def _choose_input_file() -> Path:
+    """INPUT_FILENAME from .env, or ask when it is blank."""
+    filename = env_str("INPUT_FILENAME")
+    if filename:
+        return resolve_input_path(filename)
+
+    csvs = sorted(p.name for p in INPUT_DIR.glob("*.csv")) if INPUT_DIR.is_dir() else []
+    if csvs:
+        print(f"\nCSV files in {INPUT_DIR}:", flush=True)
+        for name in csvs:
+            print(f"  {name}", flush=True)
+    else:
+        print(f"\nNo CSV files found in {INPUT_DIR}.", flush=True)
+    while True:
+        filename = _prompt("Input CSV file name: ")
+        if filename:
+            return resolve_input_path(filename)
+
+
 def main() -> int:
+    global ADMIN_SECRET, REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY
+
     _load_env()
 
-    input_filename = os.getenv("INPUT_FILENAME", "input.csv")
     show_traceback = _env_bool("SHOW_TRACEBACK", default=False)
 
-    # MODE determines how the input CSV is interpreted:
+    if os.getenv("ADMIN_SECRET"):
+        print(
+            "⚠️  ADMIN_SECRET is set in .env but is ignored: the script asks "
+            "for it instead.\n   Please delete that line from .env so the "
+            "secret isn't stored with the script.\n",
+            flush=True,
+        )
+
+    REQUEST_TIMEOUT = _env_int("REQUEST_TIMEOUT", default=120)
+    MAX_NETWORK_RETRIES = max(1, _env_int("MAX_NETWORK_RETRIES", default=5))
+    NETWORK_RETRY_DELAY = _env_int("NETWORK_RETRY_DELAY", default=5)
+
+    # MODE determines how entries are selected:
     # - owner_map: old_user -> new_user (reassign all entries owned by each old user)
     # - entry_map: entry_id -> owner_new (reassign only the listed entry IDs)
-    mode = os.getenv("MODE", "owner_map").strip().lower()
+    # - tag:       every entry with TAG goes to TAG_NEW_OWNER
+    mode = _choose_mode()
+    # Recorded so the friendly CSV-header error can show the right example.
+    os.environ["MODE"] = mode
 
-    header_old = os.getenv("COLUMN_HEADER_OLD", "old_username")
-    header_new = os.getenv("COLUMN_HEADER_NEW", "new_username")
+    header_old = env_str("COLUMN_HEADER_OLD", "old_username")
+    header_new = env_str("COLUMN_HEADER_NEW", "new_username")
 
-    header_entry_id = os.getenv("COLUMN_HEADER_ENTRY_ID", "entry_id")
-    header_owner = os.getenv("COLUMN_HEADER_OWNER", "owner_new")
-    timezone_name = os.getenv("TIMEZONE", "UTC")
+    header_entry_id = env_str("COLUMN_HEADER_ENTRY_ID", "entry_id")
+    header_owner = env_str("COLUMN_HEADER_OWNER", "owner_new")
+    header_owner_old = env_str("COLUMN_HEADER_OWNER_OLD", "owner_old")
+    skip_owner_mismatch = _env_bool("SKIP_OWNER_MISMATCH", default=False)
+    timezone_name = env_str("TIMEZONE", "UTC")
 
     dry_run = _env_bool("DRY_RUN", default=True)
     max_workers = _env_int("MAX_WORKERS", default=10)
@@ -705,30 +961,34 @@ def main() -> int:
     validate_progress_every = _env_int("VALIDATE_PROGRESS_EVERY", default=10)
     validate_new_users = _env_bool("VALIDATE_NEW_USERS", default=False)
 
-    # tag mode settings
-    tag = os.getenv("TAG", "").strip()
-    tag_new_owner = os.getenv("TAG_NEW_OWNER", "").strip()
+    # tag mode settings (asked for when blank)
+    tag = env_str("TAG")
+    tag_new_owner = env_str("TAG_NEW_OWNER")
     # All non-deleted statuses by default: PENDING(-1), IMPORT(0), PRECONVERT(1),
     # READY(2), MODERATE(-2), BLOCKED(-3), NO_CONTENT(7). Set to "" to use
     # Kaltura's own default (which may exclude some statuses).
-    tag_status_in = os.getenv("TAG_STATUS_IN", "-1,0,1,2,-2,-3,7").strip()
+    tag_status_in = env_str("TAG_STATUS_IN", "-1,0,1,2,-2,-3,7")
+
+    if mode == "tag":
+        while not tag:
+            tag = _prompt("Tag to search for: ")
+        while not tag_new_owner:
+            tag_new_owner = _prompt("New owner user ID for tagged entries: ")
+        input_path: Optional[Path] = None
+    else:
+        input_path = _choose_input_file()
+        os.environ["INPUT_FILENAME"] = str(input_path)
+    input_filename = str(input_path) if input_path else "(none — tag mode)"
 
     ts = _timestamp_tttt(timezone_name)
 
-    output_dir = "output"
-    os.makedirs(output_dir, exist_ok=True)
+    OUTPUT_DIR.mkdir(exist_ok=True)
 
     run_tag = "dryRun" if dry_run else "live"
 
-    out_csv = os.path.join(output_dir, f"{ts}_reassignOwners_{run_tag}.csv")
-    out_summary = os.path.join(
-        output_dir,
-        f"{ts}_reassignOwners_{run_tag}_summary.txt",
-    )
-    out_errors = os.path.join(
-        output_dir,
-        f"{ts}_reassignOwners_{run_tag}_errors.txt",
-    )
+    out_csv = OUTPUT_DIR / f"{ts}_reassignOwners_{run_tag}.csv"
+    out_summary = OUTPUT_DIR / f"{ts}_reassignOwners_{run_tag}_summary.txt"
+    out_errors = OUTPUT_DIR / f"{ts}_reassignOwners_{run_tag}_errors.txt"
 
     _print_progress("\n=== Reassign Owners (baseEntry) ===")
     _print_progress(f"Timestamp: {ts} ({timezone_name})")
@@ -739,6 +999,8 @@ def main() -> int:
             f"TAG: {tag!r} | TAG_NEW_OWNER: {tag_new_owner!r} | "
             f"TAG_STATUS_IN: {tag_status_in!r}"
         )
+    if mode == "entry_map":
+        _print_progress(f"SKIP_OWNER_MISMATCH: {skip_owner_mismatch}")
     _print_progress(f"DRY_RUN: {dry_run}")
     _print_progress(f"MAX_WORKERS: {max_workers} | PAGE_SIZE: {page_size}")
     _print_progress(
@@ -746,10 +1008,23 @@ def main() -> int:
         f"Request delay: {request_delay_sec}s"
     )
     _print_progress(
+        f"Network: timeout {REQUEST_TIMEOUT}s | retries {MAX_NETWORK_RETRIES} | "
+        f"retry delay {NETWORK_RETRY_DELAY}s"
+    )
+    _print_progress(
         f"Validate old users: {validate_old_users} | Validate new users: {validate_new_users} | "
         f"Validate progress every: {validate_progress_every}"
     )
     _print_progress("-----------------------------------\n")
+
+    if CLEANED_VARS:
+        _print_progress(
+            "⚠️  Removed invisible characters (e.g. zero-width spaces) "
+            f"from: {', '.join(CLEANED_VARS)}.\n"
+            "   They usually come from copy-pasting. The script uses the "
+            "cleaned values,\n   but you may want to retype those lines "
+            "in .env.\n"
+        )
 
     # Basic sanity
     if max_workers < 1:
@@ -758,16 +1033,12 @@ def main() -> int:
         # Kaltura often allows up to 500; keep it reasonable.
         raise ValueError("PAGE_SIZE must be between 1 and 500")
 
-    if mode not in {"owner_map", "entry_map", "tag"}:
-        raise ValueError("MODE must be 'owner_map', 'entry_map', or 'tag'.")
+    if input_path is not None and not input_path.is_file():
+        raise FileNotFoundError(f"Input CSV not found: {input_path}")
 
-    if mode == "tag":
-        if not tag:
-            raise ValueError("TAG must be set when MODE=tag.")
-        if not tag_new_owner:
-            raise ValueError("TAG_NEW_OWNER must be set when MODE=tag.")
-
+    ADMIN_SECRET = getpass.getpass("Enter your Kaltura admin secret: ")
     client = build_client()
+    _print_progress("Session started OK.\n")
 
     _print_progress("Reading mapping CSV...")
 
@@ -830,6 +1101,7 @@ def main() -> int:
             input_filename,
             header_entry_id=header_entry_id,
             header_owner=header_owner,
+            header_owner_old=header_owner_old,
         )
         _print_progress(f"Loaded {len(entry_mapping)} entry mapping row(s) from CSV.")
 
@@ -917,9 +1189,7 @@ def main() -> int:
 
     with open(out_csv, "w", newline="", encoding="utf-8") as f_out:
         writer = csv.writer(f_out)
-        writer.writerow(
-            ["entry_id", "entry_name", "owner_old", "owner_new", "success", "error"]
-        )
+        writer.writerow(OUTPUT_HEADERS)
 
         if mode == "owner_map":
             for m in effective_mapping:
@@ -982,16 +1252,7 @@ def main() -> int:
                         results.append(res)
 
                         # Always write a row so the output includes every attempted entry.
-                        writer.writerow(
-                            [
-                                res.entry_id,
-                                res.entry_name,
-                                res.owner_old,
-                                res.owner_new,
-                                "success" if res.success else "fail",
-                                "" if res.success else (res.error or ""),
-                            ]
-                        )
+                        writer.writerow(_result_row(res))
 
                         if not res.success:
                             msg = (
@@ -1027,6 +1288,8 @@ def main() -> int:
                         client,
                         m.entry_id,
                         m.new_user,
+                        m.expected_old,
+                        skip_owner_mismatch,
                         dry_run,
                         max_retries,
                         backoff_base_sec,
@@ -1089,16 +1352,7 @@ def main() -> int:
                         results.append(res)
 
                         # Always write a row so the output includes every attempted entry.
-                        writer.writerow(
-                            [
-                                res.entry_id,
-                                res.entry_name,
-                                res.owner_old,
-                                res.owner_new,
-                                "success" if res.success else "fail",
-                                "" if res.success else (res.error or ""),
-                            ]
-                        )
+                        writer.writerow(_result_row(res))
 
                         if not res.success:
                             msg = (
@@ -1163,16 +1417,7 @@ def main() -> int:
                             )
                         results.append(res)
 
-                        writer.writerow(
-                            [
-                                res.entry_id,
-                                res.entry_name,
-                                res.owner_old,
-                                res.owner_new,
-                                "success" if res.success else "fail",
-                                "" if res.success else (res.error or ""),
-                            ]
-                        )
+                        writer.writerow(_result_row(res))
 
                         if not res.success:
                             msg = (
@@ -1181,6 +1426,14 @@ def main() -> int:
                                 f"FAILED: {res.error}"
                             )
                             errors.append(msg)
+
+    # Owner mismatches that were still reassigned are warnings, not failures.
+    mismatches = [r for r in results if r.note.startswith("owner mismatch")]
+    for r in mismatches:
+        if r.success:
+            errors.append(
+                f"WARNING ENTRY {r.entry_id} ({r.entry_name!r}): {r.note}"
+            )
 
     # Write error log
     with open(out_errors, "w", encoding="utf-8") as f_err:
@@ -1197,6 +1450,10 @@ def main() -> int:
     summary_lines.append("Totals")
     summary_lines.append(f"Successful updates: {success_count}")
     summary_lines.append(f"Failed updates: {fail_count}")
+    if mode == "entry_map":
+        summary_lines.append(
+            f"Owner mismatches (CSV owner_old vs. actual): {len(mismatches)}"
+        )
 
     with open(out_summary, "w", encoding="utf-8") as f_sum:
         f_sum.write("\n".join(summary_lines) + "\n")
@@ -1205,6 +1462,13 @@ def main() -> int:
     print(f"Created: {out_csv}")
     print(f"Created: {out_summary}")
     print(f"Created: {out_errors}")
+
+    if mismatches:
+        print(
+            f"\n⚠️  {len(mismatches)} entr(y/ies) had a different current owner "
+            "than the CSV's owner_old column.\n   See the note column in the "
+            "output CSV.",
+        )
 
     if dry_run:
         print("DRY_RUN is enabled: no ownership changes were made.")
@@ -1221,7 +1485,7 @@ if __name__ == "__main__":
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         # Expected/"user input" errors: print a friendly message.
         # Try to read INPUT_FILENAME for context; fall back to a generic name.
-        input_filename = os.getenv("INPUT_FILENAME", "input.csv")
+        input_filename = str(resolve_input_path(env_str("INPUT_FILENAME", "input.csv")))
         show_traceback = _env_bool("SHOW_TRACEBACK", default=False)
 
         if show_traceback:
