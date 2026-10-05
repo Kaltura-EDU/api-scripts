@@ -6,7 +6,21 @@ The format is loosely based on Keep a Changelog.
 
 ---
 
-## [1.3.0] - 2026-10-05
+## [1.4.0] - 2026-10-05
+### Added
+- **Co-editors, co-publishers and co-viewers.** Reassigned entries can now keep access for other people:
+  - `KEEP_OLD_OWNER_AS` (any of `editor`, `publisher`, `viewer`) keeps the previous owner on as a co-user after the transfer.
+  - `COEDITORS`, `COPUBLISHERS` and `COVIEWERS` add the same user or group IDs to every reassigned entry, in any mode.
+  - Optional CSV columns `new_co_editors`, `new_co_publishers` and `new_co_viewers` (header names configurable) add co-users per row in `owner_map` and `entry_map`. Separate several IDs in one cell with semicolons.
+- Co-users are appended to the entry's existing ones, never replacing them. The entry is re-read with `baseEntry.get` before its co-users are changed, and the owner and co-user changes go in a single `baseEntry.update`.
+- Results CSV has three new columns, `co_editors_added`, `co_publishers_added` and `co_viewers_added`. The summary counts entries that got new co-users.
+- An `entry_map` row whose entry already belongs to `owner_new` still gets its co-users added.
+
+### Fixed
+- **Runs no longer stall silently.** All workers used to share one Kaltura connection behind a lock, so one slow request held up every other entry, and the SDK's own hidden retries (up to about 75 seconds per request) showed nothing on screen. Each worker now has its own connection, so `MAX_WORKERS` actually runs entries in parallel. SDK retries are printed as they happen.
+- In `entry_map` mode, one entry is now checked on its own before the workers start, so a connection problem shows up immediately.
+
+ - 2026-10-05
 ### Added
 - **Optional `owner_old` column in `entry_map` mode** (header set by `COLUMN_HEADER_OWNER_OLD`). It isn't required: the script still looks up each entry's real owner. When the column is there, the results CSV shows it in a new `owner_expected` column and flags any entry whose actual owner is different. New `SKIP_OWNER_MISMATCH` setting (default `false`): when `true`, mismatched entries are left unchanged and logged as skipped instead of reassigned.
 - Results CSV has two new columns, `owner_expected` and `note`. The note flags owner mismatches and entries that already belonged to the new owner.

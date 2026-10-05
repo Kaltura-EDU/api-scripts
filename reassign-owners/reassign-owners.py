@@ -19,12 +19,13 @@ import csv
 import getpass
 import os
 import random
+import re
 import sys
 import time
 import threading
 import unicodedata
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -68,6 +69,25 @@ MAX_NETWORK_RETRIES = 5
 NETWORK_RETRY_DELAY = 5
 
 MODES = ("owner_map", "entry_map", "tag")
+
+# Co-user roles -> the KalturaBaseEntry field that stores them (a
+# comma-separated list of user or group IDs).
+ROLE_FIELDS = {
+    "editor": "entitledUsersEdit",
+    "publisher": "entitledUsersPublish",
+    "viewer": "entitledUsersView",
+}
+
+# Co-users added to EVERY entry (COEDITORS / COPUBLISHERS / COVIEWERS).
+CO_USERS_ALL: Dict[str, List[str]] = {role: [] for role in ROLE_FIELDS}
+# Roles the previous owner keeps after the transfer (KEEP_OLD_OWNER_AS).
+KEEP_OLD_OWNER_AS: List[str] = []
+# Optional per-row CSV columns (COLUMN_HEADER_CO_EDITORS, etc.).
+CO_USER_HEADERS = {
+    "editor": "new_co_editors",
+    "publisher": "new_co_publishers",
+    "viewer": "new_co_viewers",
+}
 
 
 # -----------------------------------------------------------------------------
@@ -176,9 +196,9 @@ def _load_env() -> None:
     if load_dotenv is not None:
         load_dotenv(SCRIPT_DIR / ".env")
 
-# NOTE: The Kaltura client object is not guaranteed to be thread-safe.
-# We use a lock to avoid concurrent access that can cause intermittent failures.
-_CLIENT_LOCK = threading.Lock()
+# A single KalturaClient is not safe to share across threads, so each worker
+# thread gets its own client and session (see get_client()).
+_thread_local = threading.local()
 
 
 
@@ -299,10 +319,100 @@ def _print_friendly_exception(exc: Exception, input_filename: str) -> None:
 # -----------------------------------------------------------------------------
 
 
+def split_user_list(value: str) -> List[str]:
+    """Split a list of user IDs on commas, semicolons, or pipes."""
+    return [u for u in (_clean(x) for x in re.split(r"[,;|]", value or "")) if u]
+
+
+@dataclass(frozen=True)
+class CoUsers:
+    """Co-editors, co-publishers and co-viewers to add to an entry."""
+    editor: Tuple[str, ...] = ()
+    publisher: Tuple[str, ...] = ()
+    viewer: Tuple[str, ...] = ()
+
+    def any(self) -> bool:
+        return bool(self.editor or self.publisher or self.viewer)
+
+
+def co_user_changes(
+    entry: object,
+    owner_old: str,
+    owner_new: str,
+    row_co_users: CoUsers,
+) -> Tuple[Dict[str, str], Dict[str, List[str]]]:
+    """Work out which co-users to add to an entry.
+
+    Combines the run-wide lists (COEDITORS etc.), the row's CSV columns and,
+    when KEEP_OLD_OWNER_AS is set, the previous owner. Existing co-users are
+    kept: new IDs are appended, never replacing what is there. The new owner
+    is never added as their own co-user.
+
+    Returns ({entry field: full new value}, {role: IDs added}).
+    """
+    fields: Dict[str, str] = {}
+    added: Dict[str, List[str]] = {}
+    for role, field in ROLE_FIELDS.items():
+        wanted = list(CO_USERS_ALL[role]) + list(getattr(row_co_users, role))
+        if role in KEEP_OLD_OWNER_AS and owner_old:
+            wanted.append(owner_old)
+
+        current = getattr(entry, field, "") if entry is not None else ""
+        if not isinstance(current, str):  # NotImplemented / None
+            current = ""
+        existing = split_user_list(current)
+        have = {u.lower() for u in existing}
+        have.add(owner_new.lower())
+
+        new_ids: List[str] = []
+        for uid in wanted:
+            if uid.lower() not in have:
+                have.add(uid.lower())
+                new_ids.append(uid)
+        if new_ids:
+            fields[field] = ",".join(existing + new_ids)
+            added[role] = new_ids
+    return fields, added
+
+
+def _merge_co_users(a: CoUsers, b: CoUsers) -> CoUsers:
+    return CoUsers(
+        **{
+            role: tuple(dict.fromkeys(getattr(a, role) + getattr(b, role)))
+            for role in ROLE_FIELDS
+        }
+    )
+
+
+def _read_co_users(row: Dict[str, str], co_cols: Dict[str, str]) -> CoUsers:
+    return CoUsers(
+        **{
+            role: tuple(split_user_list(row.get(col) or ""))
+            for role, col in co_cols.items()
+        }
+    )
+
+
+def _find_co_user_columns(fieldnames: Dict[str, str]) -> Dict[str, str]:
+    """Map role -> actual CSV column for the optional co-user columns present."""
+    found = {
+        role: fieldnames[header]
+        for role, header in CO_USER_HEADERS.items()
+        if header in fieldnames
+    }
+    if found:
+        _print_progress(
+            "Found optional co-user column(s): "
+            + ", ".join(CO_USER_HEADERS[r] for r in found)
+        )
+    return found
+
+
 @dataclass(frozen=True)
 class MappingRow:
     old_user: str
     new_user: str
+    co_users: CoUsers = CoUsers()
 
 
 @dataclass(frozen=True)
@@ -311,6 +421,7 @@ class EntryMappingRow:
     new_user: str
     # Optional: who the CSV says owns the entry now (owner_old column).
     expected_old: str = ""
+    co_users: CoUsers = CoUsers()
 
 
 @dataclass
@@ -323,6 +434,7 @@ class UpdateResult:
     error: Optional[str] = None
     owner_expected: str = ""
     note: str = ""
+    co_added: Dict[str, List[str]] = field(default_factory=dict)
 
 
 OUTPUT_HEADERS = [
@@ -333,6 +445,9 @@ OUTPUT_HEADERS = [
     "owner_new",
     "success",
     "error",
+    "co_editors_added",
+    "co_publishers_added",
+    "co_viewers_added",
     "note",
 ]
 
@@ -346,6 +461,9 @@ def _result_row(res: UpdateResult) -> List[str]:
         res.owner_new,
         "success" if res.success else "fail",
         "" if res.success else (res.error or ""),
+        ",".join(res.co_added.get("editor", [])),
+        ",".join(res.co_added.get("publisher", [])),
+        ",".join(res.co_added.get("viewer", [])),
         res.note,
     ]
 
@@ -353,6 +471,25 @@ def _result_row(res: UpdateResult) -> List[str]:
 # -----------------------------------------------------------------------------
 # Kaltura client/session
 # -----------------------------------------------------------------------------
+
+
+class _SdkRetryLogger:
+    """The SDK silently retries failed HTTP requests (5 tries over about 75
+    seconds) and only reports them to a logger. Print those retries so a
+    slow or failing connection doesn't look like a hang; drop all other
+    SDK debug output."""
+
+    def log(self, msg: str) -> None:
+        if "retrying" in msg:
+            print(f"    [Kaltura SDK: {msg.split(' Context:')[0]}]", flush=True)
+
+
+def get_client() -> KalturaClient:
+    """Return this thread's Kaltura client, starting a session the first
+    time each thread calls it."""
+    if not hasattr(_thread_local, "client"):
+        _thread_local.client = build_client()
+    return _thread_local.client
 
 
 def build_client() -> KalturaClient:
@@ -378,6 +515,7 @@ def build_client() -> KalturaClient:
     config.serviceUrl = service_url
     config.partnerId = int(partner_id)
     config.requestTimeout = REQUEST_TIMEOUT
+    config.setLogger(_SdkRetryLogger())
     client = KalturaClient(config)
 
     try:
@@ -437,6 +575,8 @@ def read_mapping_csv(
                 f"Found: {reader.fieldnames!r}"
             )
 
+        co_cols = _find_co_user_columns(fieldnames)
+
         for i, row in enumerate(reader, start=2):
             old_user = _clean(row.get(fieldnames[header_old]) or "")
             new_user = _clean(row.get(fieldnames[header_new]) or "")
@@ -447,7 +587,13 @@ def read_mapping_csv(
                     f"Row {i} has old={old_user!r}, new={new_user!r}."
                 )
 
-            rows.append(MappingRow(old_user=old_user, new_user=new_user))
+            rows.append(
+                MappingRow(
+                    old_user=old_user,
+                    new_user=new_user,
+                    co_users=_read_co_users(row, co_cols),
+                )
+            )
 
     if not rows:
         raise ValueError("Input CSV has no mapping rows.")
@@ -464,16 +610,19 @@ def read_mapping_csv(
         mapping[mr.old_user] = mr.new_user
 
     # Collapse duplicates (same old->same new) while preserving input order
-    seen: Set[Tuple[str, str]] = set()
-    collapsed: List[MappingRow] = []
+    # Duplicate rows' co-user columns are combined, not dropped.
+    by_key: Dict[Tuple[str, str], MappingRow] = {}
     for mr in rows:
         key = (mr.old_user, mr.new_user)
-        if key in seen:
-            continue
-        seen.add(key)
-        collapsed.append(mr)
+        if key in by_key:
+            by_key[key] = replace(
+                by_key[key],
+                co_users=_merge_co_users(by_key[key].co_users, mr.co_users),
+            )
+        else:
+            by_key[key] = mr
 
-    return collapsed
+    return list(by_key.values())
 
 
 def read_entry_mapping_csv(
@@ -508,6 +657,8 @@ def read_entry_mapping_csv(
                 "will be checked against it."
             )
 
+        co_cols = _find_co_user_columns(fieldnames)
+
         for i, row in enumerate(reader, start=2):
             entry_id = _clean(row.get(fieldnames[header_entry_id]) or "")
             new_user = _clean(row.get(fieldnames[header_owner]) or "")
@@ -524,6 +675,7 @@ def read_entry_mapping_csv(
                     entry_id=entry_id,
                     new_user=new_user,
                     expected_old=expected_old,
+                    co_users=_read_co_users(row, co_cols),
                 )
             )
 
@@ -542,16 +694,19 @@ def read_entry_mapping_csv(
         mapping[mr.entry_id] = mr.new_user
 
     # Collapse duplicates (same entry_id->same owner) while preserving input order
-    seen: Set[Tuple[str, str]] = set()
-    collapsed: List[EntryMappingRow] = []
+    # Duplicate rows' co-user columns are combined, not dropped.
+    by_key: Dict[Tuple[str, str], EntryMappingRow] = {}
     for mr in rows:
         key = (mr.entry_id, mr.new_user)
-        if key in seen:
-            continue
-        seen.add(key)
-        collapsed.append(mr)
+        if key in by_key:
+            by_key[key] = replace(
+                by_key[key],
+                co_users=_merge_co_users(by_key[key].co_users, mr.co_users),
+            )
+        else:
+            by_key[key] = mr
 
-    return collapsed
+    return list(by_key.values())
 
 
 
@@ -739,7 +894,51 @@ def update_owner_with_retry(
     max_retries: int,
     backoff_base_sec: float,
     request_delay_sec: float,
+    co_users: CoUsers = CoUsers(),
+    entry: Optional[object] = None,
 ) -> UpdateResult:
+    """Set the new owner and add any co-users in one baseEntry.update.
+
+    entry is a freshly fetched copy of the entry (from baseEntry.get), used
+    to keep its existing co-users. When co-users are being added and no
+    fresh copy was passed, the entry is fetched here first: list results
+    are not relied on for co-user lists, since a blank there would wipe the
+    entry's real co-users on update.
+    """
+    wants_co_users = (
+        co_users.any() or any(CO_USERS_ALL.values()) or bool(KEEP_OLD_OWNER_AS)
+    )
+    co_fields: Dict[str, str] = {}
+    co_added: Dict[str, List[str]] = {}
+    if wants_co_users:
+        try:
+            if entry is None:
+                entry = call_with_retry(get_client().baseEntry.get, entry_id)
+            co_fields, co_added = co_user_changes(
+                entry, owner_old, owner_new, co_users
+            )
+        except Exception as exc:  # noqa: BLE001
+            return UpdateResult(
+                entry_id=entry_id,
+                entry_name=entry_name,
+                owner_old=owner_old,
+                owner_new=owner_new,
+                success=False,
+                error=f"could not read current co-users: {exc}",
+            )
+
+    change_owner = owner_old != owner_new
+    if not change_owner and not co_fields:
+        return UpdateResult(
+            entry_id=entry_id,
+            entry_name=entry_name,
+            owner_old=owner_old,
+            owner_new=owner_new,
+            success=True,
+            note="already owned by owner_new; no change",
+        )
+    note = "" if change_owner else "already owned by owner_new; co-users added"
+
     if dry_run:
         return UpdateResult(
             entry_id=entry_id,
@@ -747,6 +946,8 @@ def update_owner_with_retry(
             owner_old=owner_old,
             owner_new=owner_new,
             success=True,
+            co_added=co_added,
+            note=note,
         )
 
     attempt = 0
@@ -754,15 +955,19 @@ def update_owner_with_retry(
         try:
             _sleep_request_delay(request_delay_sec)
             entry_update = KalturaBaseEntry()
-            entry_update.userId = owner_new
-            with _CLIENT_LOCK:
-                call_with_retry(client.baseEntry.update, entry_id, entry_update)
+            if change_owner:
+                entry_update.userId = owner_new
+            for field_name, value in co_fields.items():
+                setattr(entry_update, field_name, value)
+            call_with_retry(get_client().baseEntry.update, entry_id, entry_update)
             return UpdateResult(
                 entry_id=entry_id,
                 entry_name=entry_name,
                 owner_old=owner_old,
                 owner_new=owner_new,
                 success=True,
+                co_added=co_added,
+                note=note,
             )
         except Exception as exc:  # noqa: BLE001
             attempt += 1
@@ -788,6 +993,7 @@ def process_entry_mapping_row(
     owner_new: str,
     expected_old: str,
     skip_owner_mismatch: bool,
+    co_users: CoUsers,
     dry_run: bool,
     max_retries: int,
     backoff_base_sec: float,
@@ -800,8 +1006,7 @@ def process_entry_mapping_row(
     With skip_owner_mismatch it is also left unchanged.
     """
     try:
-        with _CLIENT_LOCK:
-            entry = call_with_retry(client.baseEntry.get, entry_id)
+        entry = call_with_retry(get_client().baseEntry.get, entry_id)
         entry_name = getattr(entry, "name", "")
         owner_old = getattr(entry, "userId", "")
 
@@ -812,18 +1017,6 @@ def process_entry_mapping_row(
             if mismatch
             else ""
         )
-
-        # No-op (already the requested owner)
-        if owner_old == owner_new:
-            return UpdateResult(
-                entry_id=entry_id,
-                entry_name=entry_name,
-                owner_old=owner_old,
-                owner_new=owner_new,
-                success=True,
-                owner_expected=expected_old,
-                note="already owned by owner_new; no change",
-            )
 
         if mismatch and skip_owner_mismatch:
             return UpdateResult(
@@ -847,9 +1040,11 @@ def process_entry_mapping_row(
             max_retries,
             backoff_base_sec,
             request_delay_sec,
+            co_users=co_users,
+            entry=entry,
         )
         result.owner_expected = expected_old
-        result.note = note
+        result.note = "; ".join(n for n in (note, result.note) if n)
         return result
     except Exception as exc:  # noqa: BLE001
         return UpdateResult(
@@ -948,6 +1143,24 @@ def main() -> int:
     header_owner = env_str("COLUMN_HEADER_OWNER", "owner_new")
     header_owner_old = env_str("COLUMN_HEADER_OWNER_OLD", "owner_old")
     skip_owner_mismatch = _env_bool("SKIP_OWNER_MISMATCH", default=False)
+
+    # Co-users: run-wide lists, the previous owner's role, and CSV columns.
+    CO_USERS_ALL["editor"] = split_user_list(env_str("COEDITORS"))
+    CO_USERS_ALL["publisher"] = split_user_list(env_str("COPUBLISHERS"))
+    CO_USERS_ALL["viewer"] = split_user_list(env_str("COVIEWERS"))
+    keep_as = [r.lower() for r in split_user_list(env_str("KEEP_OLD_OWNER_AS"))]
+    bad_roles = [r for r in keep_as if r not in ROLE_FIELDS]
+    if bad_roles:
+        raise ValueError(
+            "KEEP_OLD_OWNER_AS must be blank or any of editor, publisher, "
+            f"viewer (got {', '.join(bad_roles)})."
+        )
+    KEEP_OLD_OWNER_AS[:] = keep_as
+    CO_USER_HEADERS["editor"] = env_str("COLUMN_HEADER_CO_EDITORS", "new_co_editors")
+    CO_USER_HEADERS["publisher"] = env_str(
+        "COLUMN_HEADER_CO_PUBLISHERS", "new_co_publishers"
+    )
+    CO_USER_HEADERS["viewer"] = env_str("COLUMN_HEADER_CO_VIEWERS", "new_co_viewers")
     timezone_name = env_str("TIMEZONE", "UTC")
 
     dry_run = _env_bool("DRY_RUN", default=True)
@@ -1001,6 +1214,20 @@ def main() -> int:
         )
     if mode == "entry_map":
         _print_progress(f"SKIP_OWNER_MISMATCH: {skip_owner_mismatch}")
+    for role, label in (
+        ("editor", "COEDITORS"),
+        ("publisher", "COPUBLISHERS"),
+        ("viewer", "COVIEWERS"),
+    ):
+        if CO_USERS_ALL[role]:
+            _print_progress(
+                f"{label} (added to every entry): {', '.join(CO_USERS_ALL[role])}"
+            )
+    if KEEP_OLD_OWNER_AS:
+        _print_progress(
+            f"KEEP_OLD_OWNER_AS: previous owner stays as co-"
+            f"{' + co-'.join(KEEP_OLD_OWNER_AS)}"
+        )
     _print_progress(f"DRY_RUN: {dry_run}")
     _print_progress(f"MAX_WORKERS: {max_workers} | PAGE_SIZE: {page_size}")
     _print_progress(
@@ -1037,7 +1264,7 @@ def main() -> int:
         raise FileNotFoundError(f"Input CSV not found: {input_path}")
 
     ADMIN_SECRET = getpass.getpass("Enter your Kaltura admin secret: ")
-    client = build_client()
+    client = get_client()  # main thread's client; fails fast on bad credentials
     _print_progress("Session started OK.\n")
 
     _print_progress("Reading mapping CSV...")
@@ -1237,6 +1464,7 @@ def main() -> int:
                                 max_retries,
                                 backoff_base_sec,
                                 request_delay_sec,
+                                co_users=m.co_users,
                             )
                         )
 
@@ -1279,6 +1507,24 @@ def main() -> int:
                 "Fetching entry details (baseEntry.get) and computing changes..."
             )
 
+            # Probe one entry on the main thread first, so a slow or broken
+            # connection shows up right away instead of as a silent pool.
+            probe_id = entry_mapping[0].entry_id
+            _print_progress(f"  Checking Kaltura with entry {probe_id}...")
+            probe_start = time.time()
+            try:
+                call_with_retry(client.baseEntry.get, probe_id)
+                _print_progress(
+                    f"  OK ({time.time() - probe_start:.1f}s). "
+                    f"Starting {max_workers} worker(s)..."
+                )
+            except Exception as exc:  # noqa: BLE001
+                # A bad entry ID shouldn't stop the run; it is logged below.
+                _print_progress(
+                    f"  Kaltura answered with an error after "
+                    f"{time.time() - probe_start:.1f}s: {exc}"
+                )
+
             future_to_entry_id: Dict[object, str] = {}
             futures: List[object] = []
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -1290,6 +1536,7 @@ def main() -> int:
                         m.new_user,
                         m.expected_old,
                         skip_owner_mismatch,
+                        m.co_users,
                         dry_run,
                         max_retries,
                         backoff_base_sec,
@@ -1450,6 +1697,10 @@ def main() -> int:
     summary_lines.append("Totals")
     summary_lines.append(f"Successful updates: {success_count}")
     summary_lines.append(f"Failed updates: {fail_count}")
+    for role in ROLE_FIELDS:
+        n = sum(1 for r in results if r.success and r.co_added.get(role))
+        if n:
+            summary_lines.append(f"Entries given new co-{role}s: {n}")
     if mode == "entry_map":
         summary_lines.append(
             f"Owner mismatches (CSV owner_old vs. actual): {len(mismatches)}"

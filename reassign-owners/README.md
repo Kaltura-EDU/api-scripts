@@ -94,12 +94,58 @@ jsmith,multimedia@ucsd.edu
 adoe,multimedia@ucsd.edu
 ```
 
+### Optional co-user columns (both CSV modes)
+
+Add any of these columns to give people access to the entries alongside the
+new owner:
+
+- `new_co_editors`: can edit the entry (details, captions, replacing media)
+- `new_co_publishers`: can publish the entry to categories and channels
+- `new_co_viewers`: can watch the entry even where it's otherwise restricted
+
+Put several user or group IDs in one cell with semicolons between them:
+
+```
+entry_id,owner_new,owner_old,new_co_editors
+1_abcd1234,media-group,multimedia,jdoe;asmith
+```
+
+In `owner_map` mode the co-users on a row apply to every entry that old
+user owns. Leave a cell blank to add nobody for that row.
+
 ### Different column names?
 
 If your CSV uses other headers, set them in `.env` instead of renaming the
 columns: `COLUMN_HEADER_ENTRY_ID`, `COLUMN_HEADER_OWNER` and
 `COLUMN_HEADER_OWNER_OLD` for `entry_map`; `COLUMN_HEADER_OLD` and
-`COLUMN_HEADER_NEW` for `owner_map`.
+`COLUMN_HEADER_NEW` for `owner_map`; `COLUMN_HEADER_CO_EDITORS`,
+`COLUMN_HEADER_CO_PUBLISHERS` and `COLUMN_HEADER_CO_VIEWERS` for the
+co-user columns.
+
+---
+
+## Keeping access after a transfer
+
+Often you want to hand entries to a new owner but keep access for the old
+owner or your team. Use these `.env` settings (any mode, including `tag`):
+
+| Variable | What it does |
+|----------|--------------|
+| `KEEP_OLD_OWNER_AS` | The previous owner stays on as a co-`editor`, co-`publisher` and/or co-`viewer` (e.g. `editor,publisher`). Blank = they lose access |
+| `COEDITORS` | User or group IDs added as co-editors on **every** entry, comma-separated |
+| `COPUBLISHERS` | Same, as co-publishers |
+| `COVIEWERS` | Same, as co-viewers |
+
+For example, to move a group account's entries to a new owner while the old
+group account can still edit and publish them:
+
+```
+KEEP_OLD_OWNER_AS=editor,publisher
+```
+
+Co-users are always **added** to the ones an entry already has; nobody is
+removed. The new owner is never added as their own co-user. The dry run
+shows exactly who would be added to each entry.
 
 ---
 
@@ -116,7 +162,9 @@ columns: `COLUMN_HEADER_ENTRY_ID`, `COLUMN_HEADER_OWNER` and
 | `DRY_RUN` | `true` (default) reports without changing anything. Set `false` to make real changes |
 | `TAG`, `TAG_NEW_OWNER` | For `tag` mode. Blank = ask each run |
 
-**Optional:** column header names, `SKIP_OWNER_MISMATCH`, worker count,
+**Optional:** co-users (see [Keeping access after a
+transfer](#keeping-access-after-a-transfer)), column header names,
+`SKIP_OWNER_MISMATCH`, worker count,
 retry and timeout settings, user validation, and timezone. Each one is
 explained in `.env.example`; the defaults are fine for most runs.
 
@@ -138,7 +186,7 @@ YYYY-MM-DD-HHMM_reassignOwners_dryRun_errors.txt
 **The results CSV** has one row per entry:
 
 ```
-entry_id,entry_name,owner_old,owner_expected,owner_new,success,error,note
+entry_id,entry_name,owner_old,owner_expected,owner_new,success,error,co_editors_added,co_publishers_added,co_viewers_added,note
 ```
 
 - `owner_old`: who actually owned the entry before the run
@@ -146,11 +194,15 @@ entry_id,entry_name,owner_old,owner_expected,owner_new,success,error,note
   blank otherwise)
 - `success`: `success` or `fail`
 - `error`: why it failed, if it did
+- `co_editors_added`, `co_publishers_added`, `co_viewers_added`: who was
+  (or, in a dry run, would be) added. People who already had that role
+  aren't repeated
 - `note`: things worth a look, such as an owner mismatch or an entry that
   already belonged to the new owner
 
-**The summary** lists the settings used, per-user entry counts, totals, and
-(for `entry_map`) how many owner mismatches were found.
+**The summary** lists the settings used, per-user entry counts, totals, how
+many entries got new co-users, and (for `entry_map`) how many owner
+mismatches were found.
 
 **The error log** lists every failed entry, plus a warning line for each
 owner mismatch.
