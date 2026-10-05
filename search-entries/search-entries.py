@@ -21,6 +21,7 @@ import csv
 import getpass
 import sys
 import threading
+import unicodedata
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date, timedelta, time as dt_time
@@ -51,8 +52,25 @@ load_dotenv(find_dotenv())
 
 
 # ── Env helpers ───────────────────────────────────────────────────────
+# Variables that had invisible characters removed (reported in main()).
+CLEANED_VARS = []
+
+
+def env_str(key):
+    """Read an env var, dropping invisible format characters such as
+    zero-width spaces (U+200B). They sneak in when IDs are copy-pasted from
+    web pages or chat, and Python's strip() keeps them, so a line that
+    looks blank (ENTRY_ID=) would silently become a filter matching
+    nothing."""
+    raw = getenv(key, "")
+    val = "".join(c for c in raw if unicodedata.category(c) != "Cf")
+    if val != raw:
+        CLEANED_VARS.append(key)
+    return val.strip()
+
+
 def require_env(key):
-    val = getenv(key, "").strip()
+    val = env_str(key)
     if not val:
         print(f"[ERROR] Missing or empty {key} in .env", file=sys.stderr)
         sys.exit(2)
@@ -61,13 +79,12 @@ def require_env(key):
 
 def env_list(key):
     """Parse a comma-separated env var into stripped non-empty strings."""
-    raw = getenv(key, "").strip()
+    raw = env_str(key)
     return [v.strip() for v in raw.split(",") if v.strip()] if raw else []
 
 
 def env_val(key):
-    val = getenv(key, "").strip()
-    return val or None
+    return env_str(key) or None
 
 
 # ── Credentials ───────────────────────────────────────────────────────
@@ -901,6 +918,14 @@ def main():
             _parse_date(CREATED_BEFORE) if CREATED_BEFORE else date.today()
         )
 
+    if CLEANED_VARS:
+        print(
+            "\n⚠️  Removed invisible characters (e.g. zero-width spaces) "
+            f"from: {', '.join(CLEANED_VARS)}.\n"
+            "   They usually come from copy-pasting. The search uses the "
+            "cleaned values,\n   but you may want to retype those lines "
+            "in .env."
+        )
     print_search_terms(
         range_start, range_end, "Searching with these filters:"
     )

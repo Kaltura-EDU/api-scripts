@@ -2,6 +2,10 @@
 
 This changelog was started on 2026-08-20; earlier versions of the script predate it and are not documented here.
 
+## [1.3.1] - 2026-10-05
+### Fixed
+- Invisible characters (e.g. zero-width spaces, easily picked up when copy-pasting IDs) are now removed from `.env` values. Previously a line that looked blank, like `ENTRY_ID=`, could still hold them and silently become a filter that matched nothing — e.g. a search for `OWNER_ID=e2heinzm` returned 0 entries while the KMC showed 21. The script now prints a warning naming any variables it cleaned.
+
 ## [1.3.0] - 2026-09-23
 ### Added
 - Child entries are now included. Kaltura hides child entries — e.g. the extra layouts of a Zoom meeting recorded in more than one layout, or the second stream of a dual-screen recording — from normal searches, so previously they never appeared in results. The script now looks up the children of every matched entry (in parallel across `MAX_WORKERS`) and lists them in the CSV directly under their parent. Children don't need to match your filters themselves. Set `INCLUDE_CHILDREN=False` to skip the lookup, which costs one extra API request per matched entry.

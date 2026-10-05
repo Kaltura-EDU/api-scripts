@@ -186,6 +186,10 @@ with semicolons so they stay in a single CSV field.
 
 ## Caveats
 
+- Invisible characters such as zero-width spaces (easy to pick up when
+  copy-pasting IDs) are removed from `.env` values automatically, and the
+  script warns you which lines had them. Without this, a line that looks
+  blank, like `ENTRY_ID=`, could silently filter out everything.
 - If you hit repeated connection errors or timeouts during large queries,
   connecting via VPN can help — an ISP may throttle a burst of API calls to
   the same host.
