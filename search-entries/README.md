@@ -206,14 +206,16 @@ logic above. Tune `REQUEST_TIMEOUT`, `MAX_NETWORK_RETRIES`, and
 
 ## Output columns
 
-The CSV includes: `entry_id`, `relationship`, `parent_entry_id`,
-`child_count`, `child_entry_ids` (see [Child entries](#child-entries-zoom-layouts-dual-screen-recordings)),
-`name`, `description`, `media_type`, `status`, `moderation_status`,
-`moderation_count`, `duration_sec`, `duration_min`, `plays`, `views`, `rank`,
-`total_rank`, `width`, `height`, `created_at`, `updated_at`, `last_played_at`,
-`owner_id`, `creator_id`, `categories`, `category_ids`, `tags`,
+The most-used columns come first: `created_at`, `updated_at`, `entry_id`,
+`owner_id`, `creator_id`, `name`, and `duration_sec`. Next come the
+parent-child columns `relationship`, `parent_entry_id`, `child_count`, and
+`child_entry_ids` (see [Child entries](#child-entries-zoom-layouts-dual-screen-recordings)),
+followed by `description`, `media_type`, `status`, `moderation_status`,
+`moderation_count`, `duration_min`, `plays`, `views`, `rank`, `total_rank`,
+`width`, `height`, `last_played_at`, `categories`, `category_ids`, `tags`,
 `reference_id`, `access_control_id`, `flavor_count`, `partner_sort_value`,
-`root_entry_id`, `display_in_search`, and `thumbnail_url`. Timestamps are formatted in the `TIMEZONE` from `.env`
+`root_entry_id`, `display_in_search` (`PARTNER_ONLY`, `KALTURA_NETWORK`,
+`NONE`, `SYSTEM`, or `RECYCLED`), and `thumbnail_url`. Timestamps are formatted in the `TIMEZONE` from `.env`
 (default `US/Pacific`); commas inside `categories` and `tags` are replaced
 with semicolons so they stay in a single CSV field.
 

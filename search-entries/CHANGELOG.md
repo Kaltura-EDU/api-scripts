@@ -2,6 +2,13 @@
 
 This changelog was started on 2026-08-20; earlier versions of the script predate it and are not documented here.
 
+## [1.5.0] - 2026-10-05
+### Changed
+- CSV columns reordered so the most-used come first: `created_at`, `updated_at`, `entry_id`, `owner_id`, `creator_id`, `name`, `duration_sec`, then the parent-child columns (`relationship`, `parent_entry_id`, `child_count`, `child_entry_ids`) and the rest in their previous order.
+
+### Fixed
+- `display_in_search` showed a Python object description (e.g. `<KalturaClient.Plugins.Core.KalturaEntryDisplayInSearchType object at 0x…>`) instead of a value. It now shows the setting's name: `PARTNER_ONLY`, `KALTURA_NETWORK`, `NONE`, `SYSTEM`, or `RECYCLED`. As a safety net, any other SDK enum value that reaches the CSV is written as its value, never as an object description.
+
 ## [1.4.0] - 2026-10-05
 ### Added
 - `PLAYLIST_ID` filter: search only the entries in one or more playlists (comma = any of them). Manual playlists use the entries that were added to them; rule-based playlists are run at search time. External and interactive-path playlists, and playlist IDs that aren't found, are skipped with a message, and if no entries are left the script stops without writing a CSV. It combines with the other filters like any filter; with `ENTRY_ID`, only entries in both are searched. Results aren't in playlist order, and the CSV has no playlist columns.

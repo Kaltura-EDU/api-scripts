@@ -34,6 +34,7 @@ from dotenv import find_dotenv, load_dotenv
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import (
     KalturaBaseEntryFilter,
+    KalturaEntryDisplayInSearchType,
     KalturaEntryModerationStatus,
     KalturaEntryStatus,
     KalturaEntryType,
@@ -212,6 +213,9 @@ MEDIA_TYPE_LABEL = {v: k for k, v in MEDIA_TYPE_MAP.items()}
 STATUS_LABEL = {v: k for k, v in STATUS_MAP.items()}
 MOD_STATUS_LABEL = {v: k for k, v in MOD_STATUS_MAP.items()}
 ENTRY_TYPE_LABEL = {v: k for k, v in _enum_map(KalturaEntryType).items()}
+DISPLAY_IN_SEARCH_LABEL = {
+    v: k for k, v in _enum_map(KalturaEntryDisplayInSearchType).items()
+}
 
 
 # ── Startup validation ────────────────────────────────────────────────
@@ -752,7 +756,10 @@ def duration_of(entry):
 
 
 def _enum_value(val):
-    return val.getValue() if hasattr(val, "getValue") else (val or None)
+    # Keep 0: it's a real value for some enums (displayInSearch NONE = 0).
+    if hasattr(val, "getValue"):
+        return val.getValue()
+    return None if val in ("", None) else val
 
 
 def entry_to_row(entry, relationship="", parent_id="", children=None):
@@ -777,8 +784,9 @@ def entry_to_row(entry, relationship="", parent_id="", children=None):
 
     flavor_ids = safe(entry, "flavorParamsIds")
     flavor_count = len(flavor_ids.split(",")) if flavor_ids else 0
+    display_val = _enum_value(safe(entry, "displayInSearch", None))
 
-    return {
+    row = {
         "entry_id": entry.id,
         "relationship": relationship,
         "parent_entry_id": parent_id,
@@ -816,21 +824,32 @@ def entry_to_row(entry, relationship="", parent_id="", children=None):
         "flavor_count": flavor_count,
         "partner_sort_value": safe(entry, "partnerSortValue"),
         "root_entry_id": safe(entry, "rootEntryId"),
-        "display_in_search": safe(entry, "displayInSearch"),
+        "display_in_search": DISPLAY_IN_SEARCH_LABEL.get(
+            display_val, "" if display_val is None else str(display_val)
+        ),
         "thumbnail_url": safe(entry, "thumbnailUrl"),
+    }
+    # Safety net: an SDK enum object written as-is shows up in the CSV as
+    # "<...object at 0x...>", so write its value instead.
+    return {
+        k: v.getValue() if hasattr(v, "getValue") else v
+        for k, v in row.items()
     }
 
 
 CSV_FIELDS = [
-    "entry_id", "relationship", "parent_entry_id",
+    # Most-used columns first.
+    "created_at", "updated_at", "entry_id", "owner_id", "creator_id",
+    "name", "duration_sec",
+    # Parent-child grouping (see build_rows), then everything else.
+    "relationship", "parent_entry_id",
     "child_count", "child_entry_ids",
-    "name", "description", "media_type", "status",
+    "description", "media_type", "status",
     "moderation_status", "moderation_count",
-    "duration_sec", "duration_min",
+    "duration_min",
     "plays", "views", "rank", "total_rank",
     "width", "height",
-    "created_at", "updated_at", "last_played_at",
-    "owner_id", "creator_id",
+    "last_played_at",
     "categories", "category_ids", "tags",
     "reference_id", "access_control_id",
     "flavor_count", "partner_sort_value",
