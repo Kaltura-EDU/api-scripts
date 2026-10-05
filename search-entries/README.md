@@ -1,7 +1,7 @@
 # Search Entries
 
 Query Kaltura media entries using a set of filters defined in `.env` and
-export the matching entries to a CSV. Filters cover entry IDs, name, owner,
+export the matching entries to a CSV. Filters cover entry IDs, playlists, name, owner,
 tags, category, media type, status, moderation status, created/updated date
 ranges, and duration. The script automatically works around Kaltura's
 10,000-entry API result cap by re-chunking the query into progressively
@@ -50,6 +50,7 @@ earlier search.
 | Variable | Matches |
 | --- | --- |
 | `ENTRY_ID` | Specific Kaltura entry IDs (e.g. `0_abc123`) |
+| `PLAYLIST_ID` | Entries in these playlists (see [Searching within playlists](#searching-within-playlists)) |
 | `REFERENCE_ID` | External/reference IDs assigned outside Kaltura |
 | `SEARCH_TEXT` | Full-text search across name, description, and tags |
 | `ENTRY_NAME_EQUALS` | Name exactly equals a term |
@@ -104,6 +105,38 @@ This prompts for the admin secret, then reports how many entries each of
 with and without a trailing `*`, plus a few sample names for each. Whichever
 row returns your expected `Dawson…`-style entries tells you the matching
 behavior to rely on.
+
+## Searching within playlists
+
+Set `PLAYLIST_ID` to one or more playlist IDs (find them in the KMC under
+**Content → Playlists**) to search only the entries in those playlists. Like
+every filter, it combines with the others: `PLAYLIST_ID` plus
+`OWNER_ID=jdoe`, for example, finds the entries in the playlist that `jdoe`
+owns. Several playlist IDs separated by commas cover the entries in *any* of
+those playlists.
+
+- **Manual playlists** search exactly the entries that were added to the
+  playlist.
+- **Rule-based playlists** are run at the moment you search, so they give the
+  entries the playlist would show right now (up to the playlist's own limit on
+  how many entries it shows).
+- **External and interactive-path playlists** don't hold a list of entries.
+  The script tells you and skips them.
+- If a playlist ID isn't found, the script says so and skips it. If no entries
+  are left to search, it stops without writing a CSV.
+- If you also set `ENTRY_ID`, only entries that are in a playlist *and* in
+  `ENTRY_ID` are searched.
+- As with any search, a blank `STATUS` returns `READY` entries only, so an
+  entry in the playlist that's still processing, has an error, or was deleted
+  won't appear unless you set `STATUS` to include it.
+
+The CSV lists results newest first, not in playlist order, and doesn't add any
+playlist columns. This filter narrows a search; it doesn't report on the
+playlist itself (its order, duplicates, or missing entries).
+
+Searches limited to specific entries (`ENTRY_ID` or `PLAYLIST_ID`) skip the
+date-range splitting described below: the IDs are looked up directly, 100 at a
+time, in parallel.
 
 ## Auto-chunking around the 10,000-entry cap
 

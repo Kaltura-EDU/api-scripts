@@ -41,6 +41,7 @@ from KalturaClient.Plugins.Core import (
     KalturaMediaEntryFilter,
     KalturaMediaEntryOrderBy,
     KalturaMediaType,
+    KalturaPlaylistType,
     KalturaSessionType,
 )
 from KalturaClient.exceptions import (
@@ -142,6 +143,10 @@ INCLUDE_CHILDREN = getenv("INCLUDE_CHILDREN", "True").strip().lower() in (
 )
 # One or more Kaltura entry IDs (e.g., 0_abc123). Comma = OR.
 ENTRY_ID = env_list("ENTRY_ID")
+# One or more playlist IDs (KMC: Content > Playlists). Limits the search to
+# the entries in those playlists (comma = any of them); resolved to entry
+# IDs before searching, then treated like ENTRY_ID.
+PLAYLIST_ID = env_list("PLAYLIST_ID")
 # External/reference ID assigned to the entry outside of Kaltura (e.g.,
 # from a CMS).
 REFERENCE_ID = env_list("REFERENCE_ID")
@@ -355,15 +360,16 @@ def fmt_ts(ts):
 
 
 # ── Filter builder ────────────────────────────────────────────────────
-def build_filter(created_start_ts=None, created_end_ts=None):
+def build_filter(created_start_ts=None, created_end_ts=None,
+                 entry_ids=None):
     f = KalturaMediaEntryFilter()
     # Oldest first keeps page contents stable while pages are fetched in
     # parallel: an entry added mid-run lands after the last page instead of
     # shifting every page down by one. Output is re-sorted newest first.
     f.orderBy = KalturaMediaEntryOrderBy.CREATED_AT_ASC
 
-    if ENTRY_ID:
-        f.idIn = ",".join(ENTRY_ID)
+    if entry_ids:
+        f.idIn = ",".join(entry_ids)
     if REFERENCE_ID:
         f.referenceIdIn = ",".join(REFERENCE_ID)
     if SEARCH_TEXT:
@@ -487,6 +493,9 @@ def passes_client_filters(entry):
 # ── Planning: counts & auto-chunking ──────────────────────────────────
 # Kaltura's maximum page size.
 PAGE_SIZE = 500
+# Entry IDs per request when searching specific entries (ENTRY_ID /
+# PLAYLIST_ID); keeps each idIn list a sensible length.
+ID_BATCH_SIZE = 100
 # baseEntry.list can't page past ~10,000 matches. Ranges at or above this
 # count are split into smaller date chunks before fetching; the margin
 # below 10,000 leaves room for entries added between planning and fetching.
@@ -577,46 +586,67 @@ def run_parallel(fn, tasks):
             raise
 
 
-def fetch_page(start, end, page_index):
-    """Fetch one page of matching entries in [start, end]. Runs in a worker
-    thread, on that thread's own client."""
+def fetch_page(start, end, page_index, entry_ids=None):
+    """Fetch one page of matching entries in [start, end], optionally
+    limited to entry_ids. Runs in a worker thread, on that thread's own
+    client."""
     pager = KalturaFilterPager()
     pager.pageSize = PAGE_SIZE
     pager.pageIndex = page_index
     result = call_with_retry(
         get_client().media.list,
-        build_filter(to_start_ts(start), to_end_ts(end)),
+        build_filter(to_start_ts(start), to_end_ts(end), entry_ids),
         pager,
     )
     return result.objects or []
 
 
-def fetch_all_entries(range_start, range_end):
-    """Plan the date chunks, then fetch every page of every chunk across
-    MAX_WORKERS threads. Workers only return their page; results are merged
-    here on the main thread, so no locking is needed."""
+def fetch_all_entries(range_start, range_end, entry_ids=None):
+    """Fetch every matching entry across MAX_WORKERS threads. With
+    entry_ids (from ENTRY_ID / PLAYLIST_ID), look them up in batches of
+    ID_BATCH_SIZE over the whole date range: a known list of IDs can't hit
+    the 10,000 cap, so no date chunking is needed. Otherwise plan the date
+    chunks first, then fetch every page of every chunk. Workers only return
+    their page; results are merged here on the main thread, so no locking
+    is needed."""
     print(f"Searching: {range_start} to {range_end}")
-    chunks = plan_chunks(range_start, range_end)
-    pages = [
-        (start, end, page_index)
-        for start, end, count in chunks
-        for page_index in range(1, (count + PAGE_SIZE - 1) // PAGE_SIZE + 1)
-    ]
-    if not pages:
-        return []
-
-    total = sum(count for _, _, count in chunks)
-    print(
-        f"\nFetching {total:,} entries: {len(pages)} page(s) from "
-        f"{len(chunks)} date chunk(s), {min(MAX_WORKERS, len(pages))} "
-        f"worker(s)..."
-    )
-    by_id = {}  # keyed by entry ID so a shifted page can't add duplicates
-    results = run_parallel(fetch_page, pages)
-    for done, ((start, end, page_index), objects) in enumerate(results, 1):
+    if entry_ids:
+        tasks = [
+            (range_start, range_end, 1, entry_ids[i:i + ID_BATCH_SIZE])
+            for i in range(0, len(entry_ids), ID_BATCH_SIZE)
+        ]
         print(
-            f"  [{done}/{len(pages)}] {start} → {end} "
-            f"page {page_index}: {len(objects)} entries"
+            f"\nLooking up {len(entry_ids):,} entry IDs in {len(tasks)} "
+            f"batch(es) of up to {ID_BATCH_SIZE}, "
+            f"{min(MAX_WORKERS, len(tasks))} worker(s)..."
+        )
+    else:
+        chunks = plan_chunks(range_start, range_end)
+        tasks = [
+            (start, end, page_index, None)
+            for start, end, count in chunks
+            for page_index in range(
+                1, (count + PAGE_SIZE - 1) // PAGE_SIZE + 1
+            )
+        ]
+        if not tasks:
+            return []
+        total = sum(count for _, _, count in chunks)
+        print(
+            f"\nFetching {total:,} entries: {len(tasks)} page(s) from "
+            f"{len(chunks)} date chunk(s), {min(MAX_WORKERS, len(tasks))} "
+            f"worker(s)..."
+        )
+
+    by_id = {}  # keyed by entry ID so a shifted page can't add duplicates
+    results = run_parallel(fetch_page, tasks)
+    for done, ((start, end, page_index, ids), objects) in enumerate(
+        results, 1
+    ):
+        part = f"{len(ids)} IDs" if ids else f"page {page_index}"
+        print(
+            f"  [{done}/{len(tasks)}] {start} → {end} {part}: "
+            f"{len(objects)} entries"
         )
         for entry in objects:
             by_id[entry.id] = entry
@@ -838,6 +868,87 @@ def probe_name_search(term):
             print(f"        · {obj.name}")
 
 
+# ── Playlists ─────────────────────────────────────────────────────────
+PLAYLIST_TYPE_LABEL = {
+    KalturaPlaylistType.STATIC_LIST: "manual",
+    KalturaPlaylistType.DYNAMIC: "rule-based",
+    KalturaPlaylistType.EXTERNAL: "external",
+    KalturaPlaylistType.PATH: "interactive path",
+}
+
+
+def playlist_entry_ids(playlist_id):
+    """Return the entry IDs in one playlist, or None (after a friendly
+    message) if it can't be used. Manual playlists list their entry IDs in
+    playlistContent; rule-based ones are run now with playlist.execute,
+    which returns up to the playlist's own entry limit. External and
+    interactive-path playlists don't hold a list of entries, so they're
+    skipped."""
+    try:
+        playlist = call_with_retry(get_client().playlist.get, playlist_id)
+    except KalturaException as e:
+        if getattr(e, "code", "") in (
+            "ENTRY_ID_NOT_FOUND", "INVALID_ENTRY_ID",
+        ):
+            print(
+                f"  ⚠️  Playlist [{playlist_id}] was not found. Check the ID "
+                "(KMC → Content → Playlists). Skipping it."
+            )
+        else:
+            print(
+                f"  ⚠️  Could not read playlist [{playlist_id}]: {e}. "
+                "Skipping it."
+            )
+        return None
+
+    ptype = _enum_value(safe(playlist, "playlistType", None))
+    name = safe(playlist, "name")
+    if ptype == KalturaPlaylistType.STATIC_LIST:
+        ids = [
+            e.strip()
+            for e in safe(playlist, "playlistContent").split(",")
+            if e.strip()
+        ]
+    elif ptype == KalturaPlaylistType.DYNAMIC:
+        entries = call_with_retry(
+            get_client().playlist.execute, playlist_id
+        ) or []
+        ids = [e.id for e in entries]
+    else:
+        label = PLAYLIST_TYPE_LABEL.get(ptype, f"type-{ptype}")
+        print(
+            f"  ⚠️  Playlist [{playlist_id}] \"{name}\" is an {label} "
+            "playlist, which doesn't hold a list of entries. Skipping it."
+        )
+        return None
+
+    ids = list(dict.fromkeys(ids))  # a playlist can list an entry twice
+    print(
+        f"  Playlist [{playlist_id}] \"{name}\" "
+        f"({PLAYLIST_TYPE_LABEL[ptype]}): {len(ids):,} entries"
+    )
+    return ids
+
+
+def resolve_entry_ids():
+    """The entry IDs to search within, or None for no ID limit. Playlists
+    are combined with OR (an entry in any of them); ENTRY_ID then narrows
+    that with AND, since filters always combine with AND."""
+    if not PLAYLIST_ID:
+        return list(dict.fromkeys(ENTRY_ID)) or None
+
+    print("\nReading playlists...")
+    ids = []
+    for playlist_id in PLAYLIST_ID:
+        ids.extend(playlist_entry_ids(playlist_id) or [])
+    ids = list(dict.fromkeys(ids))
+    if ENTRY_ID:
+        wanted = set(ENTRY_ID)
+        ids = [i for i in ids if i in wanted]
+        print(f"  {len(ids):,} of those entries are also in ENTRY_ID.")
+    return ids
+
+
 # ── Search-term recap ─────────────────────────────────────────────────
 def active_filters():
     """(env var, value) for every filter that's actually set, read at call
@@ -845,6 +956,7 @@ def active_filters():
     left over from an earlier search is otherwise easy to miss."""
     named = [
         ("ENTRY_ID", ENTRY_ID),
+        ("PLAYLIST_ID", PLAYLIST_ID),
         ("REFERENCE_ID", REFERENCE_ID),
         ("SEARCH_TEXT", SEARCH_TEXT),
         ("ENTRY_NAME_EQUALS", ENTRY_NAME_EQUALS),
@@ -926,11 +1038,19 @@ def main():
             "cleaned values,\n   but you may want to retype those lines "
             "in .env."
         )
+    entry_ids = resolve_entry_ids()
     print_search_terms(
         range_start, range_end, "Searching with these filters:"
     )
+    if entry_ids == []:
+        print(
+            "\nNothing to search: PLAYLIST_ID gave no entries"
+            + (" that are also in ENTRY_ID" if ENTRY_ID else "")
+            + ". No CSV written."
+        )
+        return
 
-    raw_entries = fetch_all_entries(range_start, range_end)
+    raw_entries = fetch_all_entries(range_start, range_end, entry_ids)
 
     entries = [e for e in raw_entries if passes_client_filters(e)]
     if len(entries) < len(raw_entries):

@@ -2,6 +2,13 @@
 
 This changelog was started on 2026-08-20; earlier versions of the script predate it and are not documented here.
 
+## [1.4.0] - 2026-10-05
+### Added
+- `PLAYLIST_ID` filter: search only the entries in one or more playlists (comma = any of them). Manual playlists use the entries that were added to them; rule-based playlists are run at search time. External and interactive-path playlists, and playlist IDs that aren't found, are skipped with a message, and if no entries are left the script stops without writing a CSV. It combines with the other filters like any filter; with `ENTRY_ID`, only entries in both are searched. Results aren't in playlist order, and the CSV has no playlist columns.
+
+### Changed
+- Searches limited to specific entries (`ENTRY_ID` or `PLAYLIST_ID`) now look the IDs up directly, 100 per request and in parallel, across the whole date range, instead of going through date-range splitting.
+
 ## [1.3.1] - 2026-10-05
 ### Fixed
 - Invisible characters (e.g. zero-width spaces, easily picked up when copy-pasting IDs) are now removed from `.env` values. Previously a line that looked blank, like `ENTRY_ID=`, could still hold them and silently become a filter that matched nothing — e.g. a search for `OWNER_ID=e2heinzm` returned 0 entries while the KMC showed 21. The script now prints a warning naming any variables it cleaned.
