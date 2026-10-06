@@ -1,6 +1,3 @@
-
-
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -16,8 +13,10 @@ venv/
 ENV/
 env/
 
-# Output folders and reports
-Reports/
+# Script input and output (real user data; this repo is public)
+input/*
+!input/.gitkeep
+output/
 *.csv
 
 # IDE and OS metadata
