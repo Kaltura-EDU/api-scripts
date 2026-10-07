@@ -32,7 +32,7 @@ configurable via `OUTPUT_DIR`, is created automatically). Set
 
 Before searching, the script lists every filter that's set in `.env`, plus
 the date range and any defaults that affect results (like `STATUS` being
-READY-only when left blank). It lists them again with the final totals.
+any status when left blank). It lists them again with the final totals.
 The `.env` file is long, so check this list for a value left over from an
 earlier search.
 
@@ -65,7 +65,7 @@ earlier search.
 | `CATEGORY_ID` | Numeric category IDs (KMC: Content > Categories) |
 | `CATEGORY_NAME` | Full category path (e.g. `MediaSpace>site>channels>x`) |
 | `MEDIA_TYPE` | `VIDEO`, `AUDIO`, `IMAGE`, `LIVE_STREAM_*` |
-| `STATUS` | Entry lifecycle status (blank = `READY` only) |
+| `STATUS` | Entry lifecycle status (blank = any status) |
 | `MODERATION_STATUS` | `APPROVED`, `PENDING_MODERATION`, etc. |
 | `CREATED_ON` | Created on a single day (`YYYY-MM-DD`); excludes AFTER/BEFORE |
 | `CREATED_AFTER` / `CREATED_BEFORE` | Creation date range (`YYYY-MM-DD`) |
@@ -126,9 +126,9 @@ those playlists.
   are left to search, it stops without writing a CSV.
 - If you also set `ENTRY_ID`, only entries that are in a playlist *and* in
   `ENTRY_ID` are searched.
-- As with any search, a blank `STATUS` returns `READY` entries only, so an
-  entry in the playlist that's still processing, has an error, or was deleted
-  won't appear unless you set `STATUS` to include it.
+- A blank `STATUS` returns entries of any status, so entries in the playlist
+  that are still processing, have an error, or were deleted are included.
+  Set `STATUS` to narrow this.
 
 The CSV lists results newest first, not in playlist order, and doesn't add any
 playlist columns. This filter narrows a search; it doesn't report on the
@@ -235,4 +235,5 @@ with semicolons so they stay in a single CSV field.
   Narrow it with `CREATED_AFTER`/`CREATED_BEFORE` or another filter.
 - Category filtering by `CATEGORY_ID` uses `categoriesIdsMatchOr`, so entries
   in matching subcategories are included too.
-- When no `STATUS` is set, Kaltura returns only `READY` entries by default.
+- When no `STATUS` is set, entries of any status are returned. (Kaltura's own
+  default is `READY` only, so the script asks for every status explicitly.)

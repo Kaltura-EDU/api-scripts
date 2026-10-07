@@ -178,7 +178,7 @@ CATEGORY_NAME = env_list("CATEGORY_NAME")
 #          LIVE_STREAM_WINDOWS_MEDIA, LIVE_STREAM_REAL_MEDIA,
 #          LIVE_STREAM_QUICKTIME
 MEDIA_TYPE_FILTER = env_list("MEDIA_TYPE")
-# Entry lifecycle status. If blank, Kaltura returns only READY entries.
+# Entry lifecycle status. If blank, entries of any status are returned.
 # Options: READY, PENDING, DELETED, BLOCKED, MODERATE, NO_CONTENT,
 #          ERROR_CONVERTING, ERROR_IMPORTING, IMPORT, PRECONVERT
 STATUS_FILTER = env_list("STATUS")
@@ -268,6 +268,12 @@ for _m in MODERATION_STATUS_FILTER:
             f"Unknown MODERATION_STATUS: {_m!r}. "
             f"Valid options: {', '.join(MOD_STATUS_MAP)}"
         )
+
+# Kaltura's own default is READY only, so "any status" has to be asked for
+# explicitly by listing every status.
+STATUS_IN = ",".join(
+    STATUS_MAP[s.upper()] for s in STATUS_FILTER
+) if STATUS_FILTER else ",".join(STATUS_MAP.values())
 
 
 # ── Network retry ─────────────────────────────────────────────────────
@@ -415,10 +421,7 @@ def build_filter(created_start_ts=None, created_end_ts=None,
     # Multiple MEDIA_TYPE values are handled client-side (no mediaTypeIn
     # on this filter).
 
-    if STATUS_FILTER:
-        f.statusIn = ",".join(
-            STATUS_MAP[s.upper()] for s in STATUS_FILTER
-        )
+    f.statusIn = STATUS_IN
     if MODERATION_STATUS_FILTER:
         f.moderationStatusIn = ",".join(
             str(MOD_STATUS_MAP[m.upper()])
@@ -670,8 +673,7 @@ def fetch_children(parent_id):
     children such as documents come back too. Runs in a worker thread."""
     f = KalturaBaseEntryFilter()
     f.parentEntryIdEqual = parent_id
-    if STATUS_FILTER:
-        f.statusIn = ",".join(STATUS_MAP[s.upper()] for s in STATUS_FILTER)
+    f.statusIn = STATUS_IN
     pager = KalturaFilterPager()
     pager.pageSize = PAGE_SIZE
     pager.pageIndex = 1
@@ -1013,7 +1015,7 @@ def print_search_terms(range_start, range_end, heading):
     for name, value in active:
         print(f"  {name:<24} {value}")
     if not STATUS_FILTER:
-        print(f"  {'STATUS':<24} READY only (Kaltura's default)")
+        print(f"  {'STATUS':<24} any (all statuses)")
     if not NAME_PREFILTER:
         print(f"  {'NAME_PREFILTER':<24} False — names matched locally")
     if not INCLUDE_CHILDREN:

@@ -2,6 +2,10 @@
 
 This changelog was started on 2026-08-20; earlier versions of the script predate it and are not documented here.
 
+## [1.6.0] - 2026-10-07
+### Changed
+- A blank `STATUS` now returns entries of any status (including `DELETED`, `ERROR_*`, `PENDING`, etc.) instead of only `READY`. Set `STATUS` to narrow it. If you relied on the old behavior, set `STATUS=READY`. Child entries use the same setting. The CSV already included a `status` column, so each row shows its status.
+
 ## [1.5.0] - 2026-10-05
 ### Changed
 - CSV columns reordered so the most-used come first: `created_at`, `updated_at`, `entry_id`, `owner_id`, `creator_id`, `name`, `duration_sec`, then the parent-child columns (`relationship`, `parent_entry_id`, `child_count`, `child_entry_ids`) and the rest in their previous order.
