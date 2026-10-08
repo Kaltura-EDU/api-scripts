@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.6.2 – 8 October 2026
+- The Admin Secret is now prompted at runtime with a hidden `getpass` prompt instead of being read from `.env`, so it no longer sits in the script folder. If `ADMIN_SECRET` is still set in `.env` the script warns and ignores it; delete that line. `.env.example` and the README no longer list it.
+
+## v1.6.1 – 20 August 2026
+- Login failures now show a readable message instead of a raw Python traceback: a wrong Partner ID or Admin Secret (`START_SESSION_ERROR`) prints a clear "could not log in — double-check both values, and use the Administrator (not User) secret" message and exits cleanly, and a network error reaching Kaltura prints a separate "could not reach Kaltura" message.
+
 ## v1.6 – 30 April 2026
 - Output filename format standardized: timestamp moved to the beginning of each filename and format updated to `YYYY-MM-DD-HHMM` for consistent chronological sorting across all scripts in the repository.
 - Updated README to reflect new filename format.

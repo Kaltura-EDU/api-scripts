@@ -9,6 +9,7 @@ Configuration is via a .env file or environment variables. See .env.example.
 
 from __future__ import annotations
 import os
+import getpass
 import sys
 from typing import List
 
@@ -30,7 +31,8 @@ except Exception:
 
 # CONFIG from environment (or .env)
 PARTNER_ID = os.getenv("PARTNER_ID", "")
-ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
+# The admin secret is never read from .env -- it is prompted at runtime.
+ADMIN_SECRET = ""
 USER_ID = os.getenv("USER_ID", "api-gbdavis")
 PRIVILEGES = os.getenv("PRIVILEGES", "all:*,disableentitlement")
 USE_CATEGORY_NAME = os.getenv("USE_CATEGORY_NAME", "False").lower() in ("1", "true", "yes")
@@ -41,22 +43,60 @@ CHANNEL_NAME_ENV = os.getenv("CHANNEL_NAME", "").strip()
 ENV_ENTRY_IDS = os.getenv("ENTRY_IDS", "").strip()
 
 # === START KALTURA SESSION ===
-if not PARTNER_ID or not ADMIN_SECRET:
-    print("❌ PARTNER_ID and ADMIN_SECRET must be set in environment or .env. Exiting.")
+if not PARTNER_ID:
+    print("❌ PARTNER_ID must be set in environment or .env. Exiting.")
     sys.exit(1)
+
+def _prompt_admin_secret():
+    """Ask for the admin secret. It is never read from .env."""
+    if os.getenv("ADMIN_SECRET", "").strip():
+        print(
+            "\n⚠️  ADMIN_SECRET is set in your .env. This script does not "
+            "read it -- you will be asked for the secret instead.\n"
+            "   Please delete that line from .env so the secret is not "
+            "stored on disk.\n"
+        )
+    secret = getpass.getpass(
+        "Enter your Kaltura admin secret (input hidden): "
+    ).strip()
+    if not secret:
+        print("❌ No admin secret entered. Exiting.")
+        raise SystemExit(1)
+    return secret
+
+
+ADMIN_SECRET = _prompt_admin_secret()
 
 config = KalturaConfiguration()
 config.serviceUrl = os.getenv("KALTURA_SERVICE_URL", "https://www.kaltura.com")
 config.partnerId = int(PARTNER_ID)
 client = KalturaClient(config)
 
-ks = client.session.start(
-    ADMIN_SECRET,
-    USER_ID,
-    KalturaSessionType.ADMIN,
-    int(PARTNER_ID),
-    privileges=PRIVILEGES,
-)
+try:
+    ks = client.session.start(
+        ADMIN_SECRET,
+        USER_ID,
+        KalturaSessionType.ADMIN,
+        int(PARTNER_ID),
+        privileges=PRIVILEGES,
+    )
+except Exception as e:
+    if getattr(e, "code", "") == "START_SESSION_ERROR":
+        print(
+            "\n❌ Could not log in to Kaltura. Partner ID "
+            f"[{PARTNER_ID}] and the Admin Secret were not accepted.\n"
+            "   Double-check both values — the secret must be the "
+            "Administrator secret (not the User secret),\n"
+            "   copied exactly from KMC → Settings → Integration Settings.\n"
+        )
+    elif type(e).__name__ == "KalturaClientException":
+        print(
+            "\n❌ Could not reach Kaltura to start a session.\n"
+            f"   {e}\n   Check your internet connection and try again.\n"
+        )
+    else:
+        print(f"\n❌ Could not start Kaltura session: {e}\n")
+    raise SystemExit(1)
 client.setKs(ks)
 
 # === INPUTS ===

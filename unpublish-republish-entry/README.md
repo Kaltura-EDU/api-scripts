@@ -12,11 +12,12 @@ This script addresses a common issue in Kaltura where a video entry appears in a
 
 ## Configuration
 
+> **Admin secret:** the script asks for your Kaltura Administrator secret each time it runs (typed hidden, never saved). Do not put `ADMIN_SECRET` in `.env`; if an old copy is there, delete that line.
+
 Create a `.env` file in the same directory as the script with the following keys:
 
 ```env
 PARTNER_ID=your_partner_id
-ADMIN_SECRET=your_admin_secret
 USER_ID=your_user_id
 USE_CATEGORY_NAME=True
 CATEGORY_PATH_PREFIX=Canvas_Prod>site>channels>

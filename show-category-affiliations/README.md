@@ -15,7 +15,7 @@ This Python script retrieves category affiliations for one or more Kaltura users
 # How to Run the Script
 1. Download **show-category-affiliations.py** and **requirements.txt** to your computer. Ensure they end up in the same folder.
 2. Open **show-category-affiliations.py** with a text editor.
-3. Add values for `PARTNER_ID` and `ADMIN_SECRET` based on your own instance of Kaltura.
+3. Add values for `partner_id` and `user_id` based on your own instance of Kaltura. Do not type your admin secret into the file; the script asks for it when you run it.
 4. Save the changes.
 5. Open a command line interface, such as Terminal on a Mac or Command Prompt in Windows.
 6. Navigate to wherever you put your files (e.g. `cd /path/to/project`).

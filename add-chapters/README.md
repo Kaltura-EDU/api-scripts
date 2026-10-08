@@ -24,7 +24,7 @@ Clone or download this repository to your computer. You can either:
      ```bash
      cp .env.example .env
      ```
-   - Edit `.env` to include your Kaltura credentials and CSV filename.
+   - Edit `.env` to include your Partner ID, User ID and CSV filename. The admin secret is not stored in `.env`; the script asks for it each time it runs.
 
 ## CSV Format
 Your `chapter_input.csv` must contain a header row with these fields:

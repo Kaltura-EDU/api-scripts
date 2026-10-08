@@ -46,3 +46,8 @@ venv.bak/
 
 # IDE Files
 .idea
+
+# Local env files (never commit; keep the example)
+.env
+.env.*
+!.env.example

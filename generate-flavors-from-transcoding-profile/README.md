@@ -29,11 +29,12 @@ If `CSV_FILENAME` and `ENTRY_ID_COLUMN_HEADER` are provided, the script uses the
 
 ## Configuration
 
+> **Admin secret:** the script asks for your Kaltura Administrator secret each time it runs (typed hidden, never saved). Do not put `ADMIN_SECRET` in `.env`; if an old copy is there, delete that line.
+
 The script requires a `.env` file with the following variables:
 
 **Session**
 - `PARTNER_ID`: Your Kaltura partner ID.
-- `ADMIN_SECRET`: Your Kaltura admin secret key.
 - `USER_ID`: The Kaltura user ID to associate with the session.
 - `PRIVILEGES`: Session privileges (default: `all:*,disableentitlement`).
 

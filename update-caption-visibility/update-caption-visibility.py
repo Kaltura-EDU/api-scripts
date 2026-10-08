@@ -17,6 +17,7 @@ The script performs the following steps:
 """
 
 import csv
+import getpass
 import sys
 from datetime import datetime
 import pytz
@@ -30,20 +31,45 @@ from KalturaClient.Plugins.Caption import KalturaCaptionAsset
 
 # === GLOBAL CONFIGURATION ===
 PARTNER_ID = ""
-ADMIN_SECRET = ""
 USER_ID = ""
 PRIVILEGES = "all:*,disableentitlement"
 EXPIRY = 86400  # Session expiration in seconds
 CAPTION_LABEL = "English (auto-generated)"  # Customize for your environment
 
 # === Kaltura client session ===
+# The admin secret is never stored in this file -- it is prompted.
+ADMIN_SECRET = getpass.getpass(
+    "Enter your Kaltura admin secret (input hidden): "
+).strip()
+if not ADMIN_SECRET:
+    print("❌ No admin secret entered. Exiting.")
+    raise SystemExit(1)
 config = KalturaConfiguration(PARTNER_ID)
 config.serviceUrl = "https://www.kaltura.com/"
 client = KalturaClient(config)
-client.setKs(client.session.start(
-    ADMIN_SECRET, USER_ID, KalturaSessionType.ADMIN, PARTNER_ID, EXPIRY,
-    PRIVILEGES
-))
+try:
+    ks = client.session.start(
+        ADMIN_SECRET, USER_ID, KalturaSessionType.ADMIN, PARTNER_ID, EXPIRY,
+        PRIVILEGES
+    )
+except Exception as e:
+    if getattr(e, "code", "") == "START_SESSION_ERROR":
+        print(
+            "\n❌ Could not log in to Kaltura. Partner ID "
+            f"[{PARTNER_ID}] and the Admin Secret were not accepted.\n"
+            "   Double-check both values — the secret must be the "
+            "Administrator secret (not the User secret),\n"
+            "   copied exactly from KMC → Settings → Integration Settings.\n"
+        )
+    elif type(e).__name__ == "KalturaClientException":
+        print(
+            "\n❌ Could not reach Kaltura to start a session.\n"
+            f"   {e}\n   Check your internet connection and try again.\n"
+        )
+    else:
+        print(f"\n❌ Could not start Kaltura session: {e}\n")
+    raise SystemExit(1)
+client.setKs(ks)
 
 
 def get_all_caption_assets(entry_id):

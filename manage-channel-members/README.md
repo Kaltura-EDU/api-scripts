@@ -14,6 +14,8 @@ pip install KalturaApiClient python-dotenv
 
 ## Setup
 
+> **Admin secret:** the script asks for your Kaltura Administrator secret each time it runs (typed hidden, never saved). Do not put `ADMIN_SECRET` in `.env`; if an old copy is there, delete that line.
+
 1. Copy `.env.example` to `.env` and fill in your credentials.
 2. Create an `input/` directory and place your CSV there.
 3. Run the script.
@@ -106,7 +108,6 @@ A timestamped report CSV is written to `output/`:
 | Variable | Default | Description |
 |---|---|---|
 | `PARTNER_ID` | — | Kaltura partner ID |
-| `ADMIN_SECRET` | — | Kaltura admin secret |
 | `USER_ID` | — | API user ID |
 | `SERVICE_URL` | `https://www.kaltura.com` | Kaltura API endpoint |
 | `SESSION_EXPIRY` | `86400` | Session TTL in seconds |

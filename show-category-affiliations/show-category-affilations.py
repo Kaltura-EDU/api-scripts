@@ -4,6 +4,7 @@ from KalturaClient.Plugins.Core import (
 )
 from collections import Counter
 import csv
+import getpass
 
 # CONFIGURABLE VARIABLES
 CREATE_CSV_OUTPUT = True  # Set to False if you just want on-screen results
@@ -15,13 +16,37 @@ config.serviceUrl = "https://www.kaltura.com"
 client = KalturaClient(config)
 
 # Start a session (admin ks with full privileges)
-admin_secret = ""
+# The admin secret is never stored in this file -- it is prompted.
+admin_secret = getpass.getpass(
+    "Enter your Kaltura admin secret (input hidden): "
+).strip()
+if not admin_secret:
+    print("❌ No admin secret entered. Exiting.")
+    raise SystemExit(1)
 partner_id = ""
 user_id = ""
-ks = client.session.start(
-    admin_secret, user_id, KalturaSessionType.ADMIN, partner_id,
-    privileges="all:*,disableentitlement"
-    )
+try:
+    ks = client.session.start(
+        admin_secret, user_id, KalturaSessionType.ADMIN, partner_id,
+        privileges="all:*,disableentitlement"
+        )
+except Exception as e:
+    if getattr(e, "code", "") == "START_SESSION_ERROR":
+        print(
+            "\n❌ Could not log in to Kaltura. Partner ID "
+            f"[{partner_id}] and the Admin Secret were not accepted.\n"
+            "   Double-check both values — the secret must be the "
+            "Administrator secret (not the User secret),\n"
+            "   copied exactly from KMC → Settings → Integration Settings.\n"
+        )
+    elif type(e).__name__ == "KalturaClientException":
+        print(
+            "\n❌ Could not reach Kaltura to start a session.\n"
+            f"   {e}\n   Check your internet connection and try again.\n"
+        )
+    else:
+        print(f"\n❌ Could not start Kaltura session: {e}\n")
+    raise SystemExit(1)
 client.setKs(ks)
 
 # --- GET USER INPUT ---

@@ -45,11 +45,10 @@ python3 update-caption-visibility.py
 
 ## Configuration
 
-Edit the following variables at the top of the script before running:
+Edit the following variables at the top of the script before running. The admin secret is not one of them: the script asks for it each time you run it (typed hidden, never saved).
 
 ```python
 PARTNER_ID = ""     # Your Kaltura partner ID
-ADMIN_SECRET = ""   # Your admin secret from KMC
 USER_ID = "your-email@yourdomain.edu"
 CAPTION_LABEL = "English (auto-generated)"  # Can be customized per environment
 ```

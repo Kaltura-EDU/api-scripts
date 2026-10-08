@@ -28,6 +28,8 @@ pip install KalturaApiClient python-dotenv pytz wakepy
 
 ## Setup
 
+> **Admin secret:** the script asks for your Kaltura Administrator secret each time it runs (typed hidden, never saved). Do not put `ADMIN_SECRET` in `.env`; if an old copy is there, delete that line.
+
 1. Copy `.env.example` to `.env` and fill in your values (see [Configuration](#configuration)).
 2. Create an `input/` directory and place your two CSV files there.
 3. Run the script.
@@ -62,7 +64,6 @@ Copy `.env.example` to `.env` and set the following:
 | Variable | Description |
 |---|---|
 | `PARTNER_ID` | Your Kaltura partner ID |
-| `ADMIN_SECRET` | Your Kaltura admin secret |
 | `USER_ID` | API user ID |
 | `PARENT_ID` | Category ID of your MediaSpace channels root |
 | `FULL_NAME_PREFIX` | Full category path prefix for MediaSpace channels (e.g., `MediaSpace>site>channels>`) |
@@ -112,7 +113,7 @@ This script was written quickly for UCSD's specific setup. Here is what is most 
 
 At minimum, update:
 
-- `PARTNER_ID`, `ADMIN_SECRET`, `USER_ID` — your credentials
+- `PARTNER_ID`, `USER_ID` — your account details (the admin secret is prompted each run)
 - `PARENT_ID` — find this by browsing your Kaltura category tree; it's the numeric ID of your MediaSpace channels root category
 - `FULL_NAME_PREFIX` — the full Kaltura path down to (and including the trailing `>`) your MediaSpace channels root
 - `CANVAS_CAT_PREFIX` — same, but for where your Canvas course categories live in Kaltura

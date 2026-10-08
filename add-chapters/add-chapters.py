@@ -2,6 +2,7 @@ import csv
 import re
 import sys
 import os
+from getpass import getpass
 from dotenv import load_dotenv
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import KalturaSessionType
@@ -11,24 +12,55 @@ from KalturaClient.Plugins.ThumbCuePoint import KalturaThumbCuePoint
 load_dotenv()
 
 PARTNER_ID = os.getenv("PARTNER_ID")
-ADMIN_SECRET = os.getenv("ADMIN_SECRET")
+# The admin secret is never read from .env -- it is prompted below.
+ADMIN_SECRET = ""
 USER_ID = os.getenv("USER_ID")
 PRIVILEGES = "all:*,disableentitlement"
 CSV_FILENAME = os.getenv("CSV_FILENAME")
 
 # START SESSION ===============================================================
+if os.getenv("ADMIN_SECRET", "").strip():
+    print(
+        "\n⚠️  ADMIN_SECRET is set in your .env. This script does not read "
+        "it -- you will be asked for the secret instead.\n"
+        "   Please delete that line from .env so the secret is not stored "
+        "on disk.\n"
+    )
+ADMIN_SECRET = getpass("Enter your Kaltura admin secret (input hidden): ").strip()
+if not ADMIN_SECRET:
+    print("❌ No admin secret entered. Exiting.")
+    raise SystemExit(1)
+
 config = KalturaConfiguration()
 config.serviceUrl = "https://www.kaltura.com"
 config.partnerId = int(PARTNER_ID)
 client = KalturaClient(config)
 
-ks = client.session.start(
-    ADMIN_SECRET,
-    USER_ID,
-    KalturaSessionType.ADMIN,
-    int(PARTNER_ID),
-    privileges=PRIVILEGES
-)
+try:
+    ks = client.session.start(
+        ADMIN_SECRET,
+        USER_ID,
+        KalturaSessionType.ADMIN,
+        int(PARTNER_ID),
+        privileges=PRIVILEGES
+    )
+except Exception as e:
+    if getattr(e, "code", "") == "START_SESSION_ERROR":
+        print(
+            "\n❌ Could not log in to Kaltura. Partner ID "
+            f"[{PARTNER_ID}] and the Admin Secret were not accepted.\n"
+            "   Double-check both values — the secret must be the "
+            "Administrator secret (not the User secret),\n"
+            "   copied exactly from KMC → Settings → Integration Settings.\n"
+        )
+    elif type(e).__name__ == "KalturaClientException":
+        print(
+            "\n❌ Could not reach Kaltura to start a session.\n"
+            f"   {e}\n   Check your internet connection and try again.\n"
+        )
+    else:
+        print(f"\n❌ Could not start Kaltura session: {e}\n")
+    raise SystemExit(1)
 client.setKs(ks)
 
 

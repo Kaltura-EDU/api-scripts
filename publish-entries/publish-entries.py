@@ -27,6 +27,7 @@ Author: Galen Davis
 """
 
 import csv
+import getpass
 import os
 import random
 import sys
@@ -50,7 +51,8 @@ load_dotenv()
 # Configuration
 # ---------------------------------------------------------------------------
 PARTNER_ID = int(os.getenv("PARTNER_ID", "0"))
-ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
+# The admin secret is never read from .env -- it is prompted at runtime.
+ADMIN_SECRET = ""
 USER_ID = os.getenv("USER_ID", "")
 SERVICE_URL = os.getenv("SERVICE_URL", "https://www.kaltura.com")
 SESSION_EXPIRY = int(os.getenv("SESSION_EXPIRY", "86400"))
@@ -78,11 +80,29 @@ OUTPUT_CSV = os.path.join(
 
 OUTPUT_FIELDS = ["entry_id", "category_id", "status", "error"]
 
-if not PARTNER_ID or not ADMIN_SECRET:
-    print(
-        "Error: PARTNER_ID and ADMIN_SECRET must be set in your .env file."
-    )
+if not PARTNER_ID:
+    print("Error: PARTNER_ID must be set in your .env file.")
     sys.exit(1)
+
+def _prompt_admin_secret():
+    """Ask for the admin secret. It is never read from .env."""
+    if os.getenv("ADMIN_SECRET", "").strip():
+        print(
+            "\n⚠️  ADMIN_SECRET is set in your .env. This script does not "
+            "read it -- you will be asked for the secret instead.\n"
+            "   Please delete that line from .env so the secret is not "
+            "stored on disk.\n"
+        )
+    secret = getpass.getpass(
+        "Enter your Kaltura admin secret (input hidden): "
+    ).strip()
+    if not secret:
+        print("❌ No admin secret entered. Exiting.")
+        raise SystemExit(1)
+    return secret
+
+
+ADMIN_SECRET = _prompt_admin_secret()
 
 # ---------------------------------------------------------------------------
 # Thread safety
@@ -105,14 +125,32 @@ def create_client() -> KalturaClient:
     config.serviceUrl = SERVICE_URL
     config.partnerId = PARTNER_ID
     client = KalturaClient(config)
-    ks = client.session.start(
-        ADMIN_SECRET,
-        USER_ID,
-        KalturaSessionType.ADMIN,
-        PARTNER_ID,
-        expiry=SESSION_EXPIRY,
-        privileges="all:*,disableentitlement",
-    )
+    try:
+        ks = client.session.start(
+            ADMIN_SECRET,
+            USER_ID,
+            KalturaSessionType.ADMIN,
+            PARTNER_ID,
+            expiry=SESSION_EXPIRY,
+            privileges="all:*,disableentitlement",
+        )
+    except Exception as e:
+        if getattr(e, "code", "") == "START_SESSION_ERROR":
+            print(
+                "\n❌ Could not log in to Kaltura. Partner ID "
+                f"[{PARTNER_ID}] and the Admin Secret were not accepted.\n"
+                "   Double-check both values — the secret must be the "
+                "Administrator secret (not the User secret),\n"
+                "   copied exactly from KMC → Settings → Integration Settings.\n"
+            )
+        elif type(e).__name__ == "KalturaClientException":
+            print(
+                "\n❌ Could not reach Kaltura to start a session.\n"
+                f"   {e}\n   Check your internet connection and try again.\n"
+            )
+        else:
+            print(f"\n❌ Could not start Kaltura session: {e}\n")
+        raise SystemExit(1)
     client.setKs(ks)
     return client
 

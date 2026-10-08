@@ -58,11 +58,12 @@ python-dotenv
 
 ## Configuration
 
+> **Admin secret:** the script asks for your Kaltura Administrator secret each time it runs (typed hidden, never saved). Do not put `ADMIN_SECRET` in `.env`; if an old copy is there, delete that line.
+
 This script requires a `.env` file in the same directory. Use `.env.example` as a template (copy and rename it to `.env` before running the script). Key variables include:
 
 ```env
 PARTNER_ID
-ADMIN_SECRET
 USER_ID
 SERVICE_URL
 PRIVILEGES
