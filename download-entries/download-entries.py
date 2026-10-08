@@ -44,6 +44,49 @@ from dotenv import load_dotenv
 from wakepy import keep
 import re
 
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 # Load configuration from a .env file next to this script (if present), so it is
 # found no matter which directory the script is run from.
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -172,10 +215,11 @@ def write_csv_row(writer, entry, status, filename=""):
 
 def get_kaltura_client(partner_id, admin_secret):
     config = KalturaConfiguration(partner_id)
+    config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
     config.serviceUrl = "https://www.kaltura.com/"
     client = KalturaClient(config)
     try:
-        ks = client.session.start(
+        ks = call_with_retry(client.session.start,
             admin_secret, "admin", KalturaSessionType.ADMIN, partner_id,
             privileges="all:*,disableentitlement"
         )
@@ -213,7 +257,7 @@ def get_entry_details(client, entry_id):
     """Retrieve entry details with retry logic in case of API failures."""
     for attempt in range(RETRY_ATTEMPTS):
         try:
-            return client.baseEntry.get(entry_id)
+            return call_with_retry(client.baseEntry.get, entry_id)
         except KalturaException as e:
             print(
                 f"⚠️ Attempt {attempt+1}: Failed to retrieve entry "
@@ -241,7 +285,7 @@ def resolve_category_names(client, names_str):
 
         candidates = []
         while True:
-            result = client.category.list(cat_filter, pager)
+            result = call_with_retry(client.category.list, cat_filter, pager)
             if not result.objects:
                 break
             candidates.extend(result.objects)
@@ -300,7 +344,7 @@ def get_entries(client, method, identifier):
         result = None
         for attempt in range(RETRY_ATTEMPTS):
             try:
-                result = client.baseEntry.list(entry_filter, pager)
+                result = call_with_retry(client.baseEntry.list, entry_filter, pager)
                 break
             except (KalturaException, KalturaClientException) as e:
                 if attempt < RETRY_ATTEMPTS - 1:
@@ -328,7 +372,7 @@ def get_child_entries(client, parent_entry_id):
     pager = KalturaFilterPager()
     for attempt in range(RETRY_ATTEMPTS):
         try:
-            children = client.baseEntry.list(child_filter, pager).objects
+            children = call_with_retry(client.baseEntry.list, child_filter, pager).objects
             return children if children else []
         except (KalturaException, KalturaClientException) as e:
             print(
@@ -374,7 +418,7 @@ def _source_size_bytes(client, entry):
     flavor_filter = KalturaFlavorAssetFilter()
     flavor_filter.entryIdEqual = entry.id
     try:
-        flavors = client.flavorAsset.list(
+        flavors = call_with_retry(client.flavorAsset.list,
             flavor_filter, KalturaFilterPager()
         ).objects
     except (KalturaException, KalturaClientException):
@@ -440,12 +484,12 @@ def get_flavor_download_url(client, entry):
     flavor_filter.entryIdEqual = entry.id
     pager = KalturaFilterPager()
     try:
-        flavors = client.flavorAsset.list(flavor_filter, pager).objects
+        flavors = call_with_retry(client.flavorAsset.list, flavor_filter, pager).objects
         original_flavor = next(
             (f for f in flavors if getattr(f, 'isOriginal', False)), None
             )
         if original_flavor:
-            return client.flavorAsset.getUrl(original_flavor.id)
+            return call_with_retry(client.flavorAsset.getUrl, original_flavor.id)
     except KalturaException as e:
         print(
             f"⚠️ Warning: Could not retrieve flavor asset for entry "

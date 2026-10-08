@@ -1,3 +1,5 @@
+dotenv
 KalturaApiClient
 lxml
-dotenv
+python-dotenv
+requests

@@ -16,7 +16,8 @@ Notes:
 - DRY_RUN=true will not recycle; it will only report what WOULD happen.
 - VALIDATE_ENTRY_EXISTS=true will call baseEntry.get before recycle to provide
   clearer failure reasons and to optionally detect already-recycled entries.
-- REQUEST_TIMEOUT_SEC sets the timeout for Kaltura API requests.
+- REQUEST_TIMEOUT (default 120) is the Kaltura API timeout;
+  REQUEST_TIMEOUT_SEC covers the plain HTTP requests only.
 - ADMIN_SECRET is prompted at runtime and never read from .env.
 - RECYCLE_RATE_PER_SEC paces recycle calls to stay under Kaltura's recycle
   throttle, which rejects the excess with ACTION_BLOCKED rather than queueing
@@ -39,6 +40,49 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
 
 try:
     from zoneinfo import ZoneInfo
@@ -151,7 +195,7 @@ def load_env() -> EnvConfig:
     partner_id = os.getenv("PARTNER_ID")
     user_id = os.getenv("USER_ID")
     service_url = os.getenv("SERVICE_URL")
-    privileges = os.getenv("PRIVILEGES", "")
+    privileges = os.getenv("PRIVILEGES", "all:*,disableentitlement")
 
     timezone = os.getenv("TIMEZONE", "America/Los_Angeles")
 
@@ -268,13 +312,13 @@ class RateLimiter:
 
 def build_client_from_env(cfg: EnvConfig) -> KalturaClient:
     config = KalturaConfiguration()
+    config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
     config.serviceUrl = cfg.service_url
     config.partnerId = int(cfg.partner_id)
-    config.timeout = cfg.request_timeout_sec
     client = KalturaClient(config)
 
     try:
-        ks = client.session.start(
+        ks = call_with_retry(client.session.start,
             cfg.admin_secret,
             cfg.user_id,
             KalturaSessionType.ADMIN,

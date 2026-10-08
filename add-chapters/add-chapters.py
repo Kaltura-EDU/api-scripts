@@ -8,6 +8,49 @@ from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import KalturaSessionType
 from KalturaClient.Plugins.ThumbCuePoint import KalturaThumbCuePoint
 
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 # LOAD CREDENTIALS FROM .env FILE =============================================
 load_dotenv()
 
@@ -32,12 +75,13 @@ if not ADMIN_SECRET:
     raise SystemExit(1)
 
 config = KalturaConfiguration()
+config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
 config.serviceUrl = "https://www.kaltura.com"
 config.partnerId = int(PARTNER_ID)
 client = KalturaClient(config)
 
 try:
-    ks = client.session.start(
+    ks = call_with_retry(client.session.start,
         ADMIN_SECRET,
         USER_ID,
         KalturaSessionType.ADMIN,
@@ -113,7 +157,7 @@ try:
             cue_point.objectType = "KalturaThumbCuePoint"
 
             try:
-                client.cuePoint.cuePoint.add(cue_point)
+                call_with_retry(client.cuePoint.cuePoint.add, cue_point)
                 print(f"Added chapter: {entry_id} | {timecode} | {chapter_title}")
             except Exception as e:
                 print(f"ERROR adding chapter for entry {entry_id}: {e}")

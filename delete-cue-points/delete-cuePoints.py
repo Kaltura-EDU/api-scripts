@@ -36,6 +36,54 @@ from KalturaClient.Plugins.Core import KalturaSessionType
 from KalturaClient.Plugins.Quiz import KalturaUserEntryFilter
 from KalturaClient.exceptions import KalturaException
 
+from dotenv import load_dotenv
+
+# Optional .env: only the reliability settings below are read from it.
+load_dotenv()
+
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 QUESTION_TYPES = {
     1: "Multiple Choice",
     2: "True/False",
@@ -46,12 +94,31 @@ QUESTION_TYPES = {
 
 def get_kaltura_client(partner_id, admin_secret):
     config = KalturaConfiguration(partner_id)
+    config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
     config.serviceUrl = "https://www.kaltura.com/"
     client = KalturaClient(config)
-    ks = client.session.start(
-        admin_secret, "admin", KalturaSessionType.ADMIN, partner_id,
-        privileges="all:*,disableentitlement"
-    )
+    try:
+        ks = call_with_retry(client.session.start,
+            admin_secret, "admin", KalturaSessionType.ADMIN, partner_id,
+            privileges="all:*,disableentitlement"
+        )
+    except Exception as e:
+        if getattr(e, "code", "") == "START_SESSION_ERROR":
+            print(
+                "\n❌ Could not log in to Kaltura. Partner ID "
+                f"[{partner_id}] and the Admin Secret were not accepted.\n"
+                "   Double-check both values — the secret must be the "
+                "Administrator secret (not the User secret),\n"
+                "   copied exactly from KMC → Settings → Integration Settings.\n"
+            )
+        elif type(e).__name__ == "KalturaClientException":
+            print(
+                "\n❌ Could not reach Kaltura to start a session.\n"
+                f"   {e}\n   Check your internet connection and try again.\n"
+            )
+        else:
+            print(f"\n❌ Could not start Kaltura session: {e}\n")
+        raise SystemExit(1)
     client.setKs(ks)
     return client
 
@@ -74,14 +141,14 @@ def list_and_delete_cue_points(client, entry_ids, cue_point_type):
         print("-" * 20)
 
         try:
-            entry = client.baseEntry.get(entry_id)
+            entry = call_with_retry(client.baseEntry.get, entry_id)
             entry_title = entry.name
 
             cue_filter = KalturaCuePointFilter()
             cue_filter.entryIdEqual = entry_id
             cue_filter.cuePointTypeEqual = cue_point_type
 
-            response = client.cuePoint.cuePoint.list(cue_filter)
+            response = call_with_retry(client.cuePoint.cuePoint.list, cue_filter)
             cue_points = response.objects or []
             
             print(f"entry {entry_id} has {len(cue_points)}.")
@@ -135,7 +202,7 @@ def list_and_delete_cue_points(client, entry_ids, cue_point_type):
                         cue_point.startTime / 1000  # Convert ms to seconds
                     ])
 
-                client.cuePoint.cuePoint.delete(cue_point.id)
+                call_with_retry(client.cuePoint.cuePoint.delete, cue_point.id)
                 print(f"Deleted cue point ID: {cue_point.id}")
                 total_deleted += 1
 
@@ -191,7 +258,7 @@ def list_and_delete_user_entries(client, entry_ids, user_ids):
             user_entry_filter.entryIdEqual = entry_id
             user_entry_filter.userIdIn = ','.join(user_ids)
 
-            response = client.userEntry.list(user_entry_filter)
+            response = call_with_retry(client.userEntry.list, user_entry_filter)
             user_entries = response.objects or []
 
             print(
@@ -209,7 +276,7 @@ def list_and_delete_user_entries(client, entry_ids, user_ids):
                     continue
 
             for user_entry in user_entries:
-                client.userEntry.delete(user_entry.id)
+                call_with_retry(client.userEntry.delete, user_entry.id)
                 print(f"Deleted user entry ID: {user_entry.id}")
                 total_deleted += 1
 

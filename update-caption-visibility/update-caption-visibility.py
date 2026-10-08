@@ -29,6 +29,54 @@ from KalturaClient.Plugins.Core import (
 )
 from KalturaClient.Plugins.Caption import KalturaCaptionAsset
 
+from dotenv import load_dotenv
+
+# Optional .env: only the reliability settings below are read from it.
+load_dotenv()
+
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 # === GLOBAL CONFIGURATION ===
 PARTNER_ID = ""
 USER_ID = ""
@@ -45,10 +93,11 @@ if not ADMIN_SECRET:
     print("❌ No admin secret entered. Exiting.")
     raise SystemExit(1)
 config = KalturaConfiguration(PARTNER_ID)
+config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
 config.serviceUrl = "https://www.kaltura.com/"
 client = KalturaClient(config)
 try:
-    ks = client.session.start(
+    ks = call_with_retry(client.session.start,
         ADMIN_SECRET, USER_ID, KalturaSessionType.ADMIN, PARTNER_ID, EXPIRY,
         PRIVILEGES
     )
@@ -84,7 +133,7 @@ def get_all_caption_assets(entry_id):
     try:
         caption_filter = KalturaAssetFilter()
         caption_filter.entryIdEqual = entry_id
-        caption_result = client.caption.captionAsset.list(caption_filter)
+        caption_result = call_with_retry(client.caption.captionAsset.list, caption_filter)
         return caption_result.objects
     except Exception as e:
         print(f"Error retrieving captions for entry {entry_id}: {str(e)}")
@@ -105,7 +154,7 @@ def update_caption_visibility(caption_asset_id, display_on_player):
         caption_asset = KalturaCaptionAsset()
         caption_asset.displayOnPlayer = display_on_player
         updated_caption = (
-            client.caption.captionAsset.update(caption_asset_id, caption_asset)
+            call_with_retry(client.caption.captionAsset.update, caption_asset_id, caption_asset)
         )
         print(
             f"Updated caption asset {caption_asset_id} to displayOnPlayer = "
@@ -146,7 +195,7 @@ def get_entries(method, identifier):
 
     entries = []
     while True:
-        result = client.media.list(entry_filter, pager)
+        result = call_with_retry(client.media.list, entry_filter, pager)
         if not result.objects:
             break
         entries.extend(result.objects)
@@ -173,12 +222,12 @@ if __name__ == "__main__":
 
     if choice.upper() == "X":
         print("Exiting script.")
-        client.session.end()
+        call_with_retry(client.session.end)
         sys.exit(0)
 
     if choice not in method_map:
         print("Invalid choice.")
-        client.session.end()
+        call_with_retry(client.session.end)
         sys.exit(1)
 
     method, prompt = method_map[choice]
@@ -186,7 +235,7 @@ if __name__ == "__main__":
 
     if not identifier:
         print("You must provide a valid value.")
-        client.session.end()
+        call_with_retry(client.session.end)
         sys.exit(1)
 
     entries = get_entries(method, identifier)
@@ -216,7 +265,7 @@ if __name__ == "__main__":
             ).strip().lower()
         if proceed != 'yes':
             print("Operation cancelled by the user.")
-            client.session.end()
+            call_with_retry(client.session.end)
             sys.exit(0)
 
     # Get the current date and time in Pacific Time
@@ -269,4 +318,4 @@ if __name__ == "__main__":
         )
 
     # End the session
-    client.session.end()
+    call_with_retry(client.session.end)

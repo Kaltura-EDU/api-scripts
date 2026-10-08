@@ -15,6 +15,49 @@ from KalturaClient.Plugins.Metadata import (
     KalturaMetadataObjectType, KalturaMetadataFilter
 )
 
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 # Load environment variables
 load_dotenv()
 
@@ -60,24 +103,43 @@ ADMIN_SECRET = getpass.getpass("Enter your Kaltura admin secret: ")
 
 # Set up Kaltura session
 config = KalturaConfiguration()
+config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
 config.serviceUrl = "https://www.kaltura.com"
 config.partnerId = int(PARTNER_ID)
 client = KalturaClient(config)
 
-ks = client.session.start(
-    ADMIN_SECRET,
-    USER_ID,
-    KalturaSessionType.ADMIN,
-    int(PARTNER_ID),
-    privileges=PRIVILEGES
-)
+try:
+    ks = call_with_retry(client.session.start,
+        ADMIN_SECRET,
+        USER_ID,
+        KalturaSessionType.ADMIN,
+        int(PARTNER_ID),
+        privileges=PRIVILEGES
+    )
+except Exception as e:
+    if getattr(e, "code", "") == "START_SESSION_ERROR":
+        print(
+            "\n❌ Could not log in to Kaltura. Partner ID "
+            f"[{PARTNER_ID}] and the Admin Secret were not accepted.\n"
+            "   Double-check both values — the secret must be the "
+            "Administrator secret (not the User secret),\n"
+            "   copied exactly from KMC → Settings → Integration Settings.\n"
+        )
+    elif type(e).__name__ == "KalturaClientException":
+        print(
+            "\n❌ Could not reach Kaltura to start a session.\n"
+            f"   {e}\n   Check your internet connection and try again.\n"
+        )
+    else:
+        print(f"\n❌ Could not start Kaltura session: {e}\n")
+    raise SystemExit(1)
 client.setKs(ks)
 
 
 def resolve_category(cat_id, cat_name, id_var_name):
     """Return (id_str, name_str) resolved from either a category ID or name."""
     if cat_id:
-        cat = client.category.get(int(cat_id))
+        cat = call_with_retry(client.category.get, int(cat_id))
         return str(cat.id), cat.name
     cat_filter = KalturaCategoryFilter()
     cat_filter.freeText = cat_name
@@ -86,7 +148,7 @@ def resolve_category(cat_id, cat_name, id_var_name):
     pager.pageIndex = 1
     candidates = []
     while True:
-        result = client.category.list(cat_filter, pager)
+        result = call_with_retry(client.category.list, cat_filter, pager)
         if not result.objects:
             break
         candidates.extend(result.objects)
@@ -114,7 +176,7 @@ def get_category_metadata_xml(category_id):
     filter.metadataProfileIdEqual = int(METADATA_PROFILE_ID)
     filter.objectIdEqual = str(category_id)
     filter.metadataObjectTypeEqual = KalturaMetadataObjectType.CATEGORY
-    result = client.metadata.metadata.list(filter)
+    result = call_with_retry(client.metadata.metadata.list, filter)
     return result.objects[0] if result.objects else None
 
 
@@ -178,8 +240,8 @@ if confirmation != "y":
 cloned_pairs = []
 for pid in playlist_ids:
     print(f"Duplicating {pid}...")
-    new_playlist = client.playlist.clone(pid)
-    original = client.playlist.get(pid)
+    new_playlist = call_with_retry(client.playlist.clone, pid)
+    original = call_with_retry(client.playlist.get, pid)
     cloned_pairs.append((original.name, pid, new_playlist.id))
 
 # Retrieve destination metadata object
@@ -195,7 +257,7 @@ updated_xml = (
         [new for _, _, new in cloned_pairs]
     )
 )
-client.metadata.metadata.update(destination_metadata.id, updated_xml)
+call_with_retry(client.metadata.metadata.update, destination_metadata.id, updated_xml)
 
 # Output CSV
 timestamp = datetime.now().strftime("%Y-%m-%d-%H%M")

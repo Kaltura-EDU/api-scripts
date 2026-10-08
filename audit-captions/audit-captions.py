@@ -65,6 +65,49 @@ from KalturaClient.Plugins.Caption import (
     KalturaCaptionAssetFilter, KalturaCaptionAssetStatus,
 )
 
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 # Audio descriptions are distinguished from captions by the caption asset's
 # `usage` field (KalturaCaptionAssetUsage). requirements.txt pins
 # KalturaApiClient>=21.20.0, the oldest version confirmed to have this field,
@@ -144,10 +187,11 @@ def _usage_value(cap) -> str:
 def get_kaltura_client(partner_id, admin_secret):
     """Starts an admin Kaltura session for the given partner ID."""
     config = KalturaConfiguration(partner_id)
+    config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
     config.serviceUrl = "https://www.kaltura.com/"
     client = KalturaClient(config)
     try:
-        ks = client.session.start(
+        ks = call_with_retry(client.session.start,
             admin_secret, "admin", KalturaSessionType.ADMIN, partner_id,
             privileges="all:*,disableentitlement"
         )
@@ -196,7 +240,7 @@ def get_entry_details(client, entry_id, rate_limiter):
     for attempt in range(RETRY_ATTEMPTS):
         try:
             rate_limiter.wait()
-            entry = client.baseEntry.get(entry_id)
+            entry = call_with_retry(client.baseEntry.get, entry_id)
             return entry.name, (entry.userId or "")
         except KalturaException as e:
             if getattr(e, "code", "") == "ENTRY_ID_NOT_FOUND":
@@ -220,7 +264,7 @@ def get_entries_by_tag(client, tags, rate_limiter):
     results = []
     while True:
         rate_limiter.wait()
-        page = client.baseEntry.list(entry_filter, pager).objects
+        page = call_with_retry(client.baseEntry.list, entry_filter, pager).objects
         results.extend((e.id, e.name, e.userId or "") for e in page)
         if len(page) < pager.pageSize:
             break
@@ -269,7 +313,7 @@ def check_entry_captions(client, entry_id, check_ead, rate_limiter):
 
     while True:
         rate_limiter.wait()
-        page = client.caption.captionAsset.list(cap_filter, pager).objects
+        page = call_with_retry(client.caption.captionAsset.list, cap_filter, pager).objects
         for cap in page:
             if _usage_value(cap) == str(AUDIO_DESCRIPTION_USAGE):
                 has_ead = True

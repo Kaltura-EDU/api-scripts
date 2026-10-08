@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0] – 2026-10-08
+### Changed
+- Every Kaltura API call now goes through a `call_with_retry` helper: transient network errors (timeouts, connection resets) are retried with a growing delay instead of ending the run, while real API errors still surface normally. Tune with `REQUEST_TIMEOUT` (default 120), `MAX_NETWORK_RETRIES` (default 5) and `NETWORK_RETRY_DELAY` (default 5) in `.env`; see `.env.example`.
+
+## [1.2.1] – 2026-08-20
+### Changed
+- Login failures now show a readable message instead of a raw Python traceback: a wrong Partner ID or Admin Secret (`START_SESSION_ERROR`) prints a clear "could not log in — double-check both values, and use the Administrator (not User) secret" message and exits cleanly, and a network error reaching Kaltura prints a separate "could not reach Kaltura" message.
+
 ## [1.2.0] – 2026-07-01
 ### Changed
 - Source and destination channels can now be identified by either category ID or channel name. Set `SOURCE_CATEGORY_ID` or `SOURCE_CATEGORY_NAME` (and the equivalent `DESTINATION_*` pair) in `.env` — not both.

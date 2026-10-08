@@ -1,7 +1,8 @@
 # 22.0.0+ required: audio-description detection needs the caption-asset
 # `usage` field, which older SDKs don't expose.
+dotenv
 KalturaApiClient>=22.0.0
 lxml
 pysrt
-dotenv
+python-dotenv
 requests

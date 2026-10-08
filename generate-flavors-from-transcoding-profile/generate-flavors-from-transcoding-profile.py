@@ -35,6 +35,49 @@ from KalturaClient.Plugins.Core import (
 )
 from KalturaClient.exceptions import KalturaException
 
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 # =============================================================================
 # Env / config ----------------------------------------------------------------
 # =============================================================================
@@ -128,10 +171,11 @@ def _prompt_admin_secret():
 
 ADMIN_SECRET = _prompt_admin_secret()
 cfg = KalturaConfiguration(PARTNER_ID)
+cfg.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
 cfg.serviceUrl = SERVICE_URL
 client = KalturaClient(cfg)
 try:
-    ks = client.session.start(
+    ks = call_with_retry(client.session.start,
         ADMIN_SECRET, USER_ID, KalturaSessionType.ADMIN, PARTNER_ID,
         privileges=PRIVILEGES,
     )
@@ -217,7 +261,7 @@ def get_profile_flavor_params_ids(profile_id: int) -> List[int]:
     params_ids = []
     while True:
         with _CLIENT_LOCK:
-            resp = client.conversionProfileAssetParams.list(f, pager)
+            resp = call_with_retry(client.conversionProfileAssetParams.list, f, pager)
         if not resp or not getattr(resp, "objects", None):
             break
         for obj in resp.objects:
@@ -237,7 +281,7 @@ def list_flavors(entry_id: str) -> list:
     flavors = []
     while True:
         with _CLIENT_LOCK:
-            resp = client.flavorAsset.list(ff, pager)
+            resp = call_with_retry(client.flavorAsset.list, ff, pager)
         if not resp or not getattr(resp, "objects", None):
             break
         flavors.extend(resp.objects)
@@ -265,7 +309,7 @@ def iter_selected_entries() -> List:
         for eid in ids:
             try:
                 with _CLIENT_LOCK:
-                    selected.append(client.media.get(eid))
+                    selected.append(call_with_retry(client.media.get, eid))
             except Exception as ex:
                 print(f"[WARN] media.get failed for {eid}: {ex}")
         return selected
@@ -274,7 +318,7 @@ def iter_selected_entries() -> List:
         for eid in ENTRY_IDS:
             try:
                 with _CLIENT_LOCK:
-                    selected.append(client.media.get(eid))
+                    selected.append(call_with_retry(client.media.get, eid))
             except Exception as ex:
                 print(f"[WARN] media.get failed for {eid}: {ex}")
         return selected
@@ -291,7 +335,7 @@ def iter_selected_entries() -> List:
         page += 1
         try:
             with _CLIENT_LOCK:
-                resp = client.media.list(f, pager)
+                resp = call_with_retry(client.media.list, f, pager)
         except KalturaException as ex:
             print(f"[ERROR] media.list failed on page {page}: {ex}")
             break
@@ -398,7 +442,7 @@ def convert_entry_flavors(row: Dict) -> Dict:
     for fp_id_str in fp_ids:
         try:
             with _CLIENT_LOCK:
-                client.flavorAsset.convert(entry_id, int(fp_id_str))
+                call_with_retry(client.flavorAsset.convert, entry_id, int(fp_id_str))
             generated += 1
             print(f"[QUEUED] entry={entry_id} flavorParamsId={fp_id_str}", flush=True)
         except KalturaException as ex:
@@ -424,7 +468,7 @@ def main():
     # Validate transcoding profile
     print(f"[INFO] Fetching transcoding profile {TRANSCODING_PROFILE_ID} …")
     try:
-        profile = client.conversionProfile.get(TRANSCODING_PROFILE_ID)
+        profile = call_with_retry(client.conversionProfile.get, TRANSCODING_PROFILE_ID)
     except KalturaException as ex:
         print(f"[ERROR] conversionProfile.get failed: {ex}", file=sys.stderr)
         sys.exit(1)

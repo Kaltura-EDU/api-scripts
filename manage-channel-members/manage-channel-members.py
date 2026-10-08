@@ -55,6 +55,49 @@ from KalturaClient.Plugins.Core import (
     KalturaSessionType,
 )
 
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 load_dotenv()
 
 # ---------------------------------------------------------------------------
@@ -145,11 +188,12 @@ def _fmt_duration(seconds: float) -> str:
 
 def create_client() -> KalturaClient:
     config = KalturaConfiguration()
+    config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
     config.serviceUrl = SERVICE_URL
     config.partnerId = PARTNER_ID
     client = KalturaClient(config)
     try:
-        ks = client.session.start(
+        ks = call_with_retry(client.session.start,
             ADMIN_SECRET,
             USER_ID,
             KalturaSessionType.ADMIN,
@@ -263,7 +307,7 @@ def build_category_cache(category_ids) -> dict:
 
     def _fetch_one(cid):
         members = {}
-        cat = get_client().category.get(int(cid))
+        cat = call_with_retry(get_client().category.get, int(cid))
         if cat.owner:
             members[cat.owner] = "owner"
         filt = KalturaCategoryUserFilter()
@@ -272,7 +316,7 @@ def build_category_cache(category_ids) -> dict:
         pager.pageSize = 500
         pager.pageIndex = 1
         while True:
-            resp = get_client().categoryUser.list(filt, pager)
+            resp = call_with_retry(get_client().categoryUser.list, filt, pager)
             for cu in resp.objects:
                 members[cu.userId] = perm_to_role(cu.permissionLevel)
             if len(resp.objects) < pager.pageSize:
@@ -341,11 +385,11 @@ def lookup_role(
     # Cache miss — fall back to live lookup
     if client is None:
         return None
-    cat = client.category.get(int(category_id))
+    cat = call_with_retry(client.category.get, int(category_id))
     if cat.owner == username:
         return "owner"
     try:
-        cu = client.categoryUser.get(int(category_id), username)
+        cu = call_with_retry(client.categoryUser.get, int(category_id), username)
         return perm_to_role(cu.permissionLevel)
     except Exception as exc:
         if _is_not_found(exc):
@@ -390,7 +434,7 @@ def process_row(row: dict, cache: dict) -> dict:
                 cat.owner = username
                 cid = int(category_id)
                 with_retry(
-                    lambda: client.category.update(cid, cat),
+                    lambda: call_with_retry(client.category.update, cid, cat),
                     label=f"set owner {username}",
                 )
                 result = (
@@ -403,7 +447,7 @@ def process_row(row: dict, cache: dict) -> dict:
                 cu.userId = username
                 cu.permissionLevel = ROLE_TO_PERM[role]
                 with_retry(
-                    lambda: client.categoryUser.add(cu),
+                    lambda: call_with_retry(client.categoryUser.add, cu),
                     label=f"add {username}",
                 )
                 result = f"added as {role}"
@@ -420,7 +464,7 @@ def process_row(row: dict, cache: dict) -> dict:
                     cid = int(category_id)
                     uname = username
                     with_retry(
-                        lambda: client.categoryUser.delete(cid, uname),
+                        lambda: call_with_retry(client.categoryUser.delete, cid, uname),
                         label=f"remove {username}",
                     )
                     result = "removed"
@@ -469,7 +513,7 @@ def process_row(row: dict, cache: dict) -> dict:
                 cat = KalturaCategory()
                 cat.owner = username
                 with_retry(
-                    lambda: client.category.update(cid, cat),
+                    lambda: call_with_retry(client.category.update, cid, cat),
                     label=f"set owner {username}",
                 )
                 result = (
@@ -484,7 +528,7 @@ def process_row(row: dict, cache: dict) -> dict:
                 cid = int(category_id)
                 uname = username
                 with_retry(
-                    lambda: client.categoryUser.update(cid, uname, cu),
+                    lambda: call_with_retry(client.categoryUser.update, cid, uname, cu),
                     label=f"change role {username}",
                 )
                 result = f"role changed from {current_role} to {role}"

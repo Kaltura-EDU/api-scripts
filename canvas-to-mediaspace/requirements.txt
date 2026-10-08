@@ -1,4 +1,5 @@
 KalturaApiClient
 python-dotenv
 pytz
+requests
 wakepy>=1.0.0

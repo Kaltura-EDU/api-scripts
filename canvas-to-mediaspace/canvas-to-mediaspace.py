@@ -70,6 +70,49 @@ from KalturaClient.Plugins.Core import (
     KalturaSessionType,
 )
 
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 load_dotenv()
 
 # ---------------------------------------------------------------------------
@@ -215,11 +258,12 @@ def with_retry(fn, course_id: str = "", label: str = ""):
 
 def create_client() -> KalturaClient:
     config = KalturaConfiguration()
+    config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
     config.serviceUrl = SERVICE_URL
     config.partnerId = PARTNER_ID
     client = KalturaClient(config)
     try:
-        ks = client.session.start(
+        ks = call_with_retry(client.session.start,
             ADMIN_SECRET,
             USER_ID,
             KalturaSessionType.ADMIN,
@@ -345,7 +389,7 @@ def get_existing_ms_channel_names(client: KalturaClient) -> set:
     pager.pageIndex = 1
     names: set = set()
     while True:
-        resp = client.category.list(filt, pager)
+        resp = call_with_retry(client.category.list, filt, pager)
         for cat in resp.objects:
             if ">" in cat.fullName:
                 names.add(cat.fullName.split(">")[-1].strip())
@@ -371,7 +415,7 @@ def find_canvas_root_category(
     pager = KalturaFilterPager()
     pager.pageSize = 100
     pager.pageIndex = 1
-    resp = client.category.list(filt, pager)
+    resp = call_with_retry(client.category.list, filt, pager)
     for cat in resp.objects:
         if cat.fullName.strip() == target:
             return cat
@@ -389,7 +433,7 @@ def get_all_category_ids_in_subtree(
     pager.pageSize = 500
     pager.pageIndex = 1
     while True:
-        resp = client.category.list(filt, pager)
+        resp = call_with_retry(client.category.list, filt, pager)
         ids.extend(cat.id for cat in resp.objects)
         if len(resp.objects) < pager.pageSize:
             break
@@ -417,7 +461,7 @@ def get_entry_ids_across_categories(
     pager.pageSize = 500
     pager.pageIndex = 1
     while True:
-        resp = client.categoryEntry.list(filt, pager)
+        resp = call_with_retry(client.categoryEntry.list, filt, pager)
         if not resp.objects:
             break
         for ce in resp.objects:
@@ -439,7 +483,7 @@ def get_entry_details(client: KalturaClient, entry_ids: set) -> dict:
         filt.idIn = ",".join(batch)
         pager = KalturaFilterPager()
         pager.pageSize = batch_size
-        resp = client.baseEntry.list(filt, pager)
+        resp = call_with_retry(client.baseEntry.list, filt, pager)
         for entry in resp.objects:
             details[entry.id] = entry
     return details
@@ -465,7 +509,7 @@ def create_channel(
     cat.moderation = MODERATION
     cat.parentId = PARENT_ID
     cat.privacyContext = PRIVACY_CONTEXT
-    return client.category.add(cat)
+    return call_with_retry(client.category.add, cat)
 
 
 def add_channel_member(
@@ -482,7 +526,7 @@ def add_channel_member(
     cu.permissionLevel = perm_level
     try:
         with_retry(
-            lambda: client.categoryUser.add(cu),
+            lambda: call_with_retry(client.categoryUser.add, cu),
             course_id=course_id,
             label=f"add {username}",
         )
@@ -507,7 +551,7 @@ def publish_entry(
     ce.entryId = entry_id
     try:
         with_retry(
-            lambda: client.categoryEntry.add(ce),
+            lambda: call_with_retry(client.categoryEntry.add, ce),
             course_id=course_id,
             label=f"publish {entry_id}",
         )

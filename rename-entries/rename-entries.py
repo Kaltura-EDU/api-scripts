@@ -19,15 +19,82 @@ from KalturaClient.Plugins.Core import (
 )
 from KalturaClient.exceptions import KalturaException
 
+from dotenv import load_dotenv
+
+# Optional .env: only the reliability settings below are read from it.
+load_dotenv()
+
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 
 def get_kaltura_client(partner_id, admin_secret):
     config = KalturaConfiguration(partner_id)
+    config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
     config.serviceUrl = "https://www.kaltura.com/"
     client = KalturaClient(config)
-    ks = client.session.start(
-        admin_secret, "admin", KalturaSessionType.ADMIN, partner_id,
-        privileges="all:*,disableentitlement"
-    )
+    try:
+        ks = call_with_retry(client.session.start,
+            admin_secret, "admin", KalturaSessionType.ADMIN, partner_id,
+            privileges="all:*,disableentitlement"
+        )
+    except Exception as e:
+        if getattr(e, "code", "") == "START_SESSION_ERROR":
+            print(
+                "\n❌ Could not log in to Kaltura. Partner ID "
+                f"[{partner_id}] and the Admin Secret were not accepted.\n"
+                "   Double-check both values — the secret must be the "
+                "Administrator secret (not the User secret),\n"
+                "   copied exactly from KMC → Settings → Integration Settings.\n"
+            )
+        elif type(e).__name__ == "KalturaClientException":
+            print(
+                "\n❌ Could not reach Kaltura to start a session.\n"
+                f"   {e}\n   Check your internet connection and try again.\n"
+            )
+        else:
+            print(f"\n❌ Could not start Kaltura session: {e}\n")
+        raise SystemExit(1)
     client.setKs(ks)
     return client
 
@@ -36,7 +103,7 @@ def get_entries_by_ids(client, entry_ids):
     entries = []
     for eid in entry_ids:
         try:
-            e = client.baseEntry.get(eid)
+            e = call_with_retry(client.baseEntry.get, eid)
             entries.append(e)
         except KalturaException:
             print(f"Warning: Entry {eid} not found or not accessible.")
@@ -56,7 +123,7 @@ def get_entries_by_tag(client, tag):
 
     while True:
         pager.pageIndex = page_index
-        response = client.baseEntry.list(entry_filter, pager)
+        response = call_with_retry(client.baseEntry.list, entry_filter, pager)
         if not response.objects:
             break
         entries.extend(response.objects)
@@ -78,7 +145,7 @@ def get_entries_by_category(client, category_id):
 
     while True:
         pager.pageIndex = page_index
-        response = client.baseEntry.list(entry_filter, pager)
+        response = call_with_retry(client.baseEntry.list, entry_filter, pager)
         if not response.objects:
             break
         entries.extend(response.objects)
@@ -187,7 +254,7 @@ def main():
             # Update entry title
             entry_update = KalturaBaseEntry()
             entry_update.name = new_title
-            updated_entry = client.baseEntry.update(e.id, entry_update)
+            updated_entry = call_with_retry(client.baseEntry.update, e.id, entry_update)
 
             # Onscreen feedback
             print(f"Updated entry {e.id}: '{original_title}' -> '{new_title}'")

@@ -45,6 +45,49 @@ import pytz
 import re
 from dotenv import load_dotenv, find_dotenv
 
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 
 # ==== Global Variables ====
 # find the .env file and load it
@@ -136,12 +179,13 @@ def _prompt_admin_secret():
 # ==== Initialize Kaltura Client ====
 ADMIN_SECRET = _prompt_admin_secret()
 config = KalturaConfiguration()
+config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
 config.serviceUrl = "https://www.kaltura.com"
 client = KalturaClient(config)
 
 privileges = "all:*,disableentitlement"
 try:
-    ks = client.session.start(
+    ks = call_with_retry(client.session.start,
         ADMIN_SECRET,
         USER_ID,
         KalturaSessionType.ADMIN,
@@ -225,7 +269,7 @@ def fetch_entries_for_interval(start_ts, end_ts):
 
     while True:
         try:
-            result = client.media.list(filter, pager)
+            result = call_with_retry(client.media.list, filter, pager)
         except KalturaException as e:
             if e.code == "QUERY_EXCEEDED_MAX_MATCHES_ALLOWED":
                 print(
@@ -259,7 +303,7 @@ def fetch_entries_for_interval(start_ts, end_ts):
                     # Get flavor assets for this entry
                     flavor_filter = KalturaFlavorAssetFilter()
                     flavor_filter.entryIdEqual = entry.id
-                    flavor_list = client.flavorAsset.list(flavor_filter)
+                    flavor_list = call_with_retry(client.flavorAsset.list, flavor_filter)
 
                     flavor_count = len(flavor_list.objects)
                     flavor_size_sum = sum(fa.size for fa in flavor_list.objects)
@@ -270,7 +314,7 @@ def fetch_entries_for_interval(start_ts, end_ts):
                     )
 
                     if FLAVOR_SOURCE_NAME and source_flavor:
-                        url = client.flavorAsset.getUrl(source_flavor.id)
+                        url = call_with_retry(client.flavorAsset.getUrl, source_flavor.id)
 
                         # More flexible regex that matches anything after
                         # /fileName/ up to next /

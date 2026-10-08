@@ -1,5 +1,9 @@
 # Changelog – download-entries.py
 
+## [v2.2.0] – 2026-10-08
+### Changed
+- Every Kaltura API call now goes through a `call_with_retry` helper: transient network errors (timeouts, connection resets) are retried with a growing delay instead of ending the run, while real API errors still surface normally. Tune with `REQUEST_TIMEOUT` (default 120), `MAX_NETWORK_RETRIES` (default 5) and `NETWORK_RETRY_DELAY` (default 5) in `.env`; see `.env.example`.
+
 ## [v2.1.2] – 2026-09-29
 ### Fixed
 - The output folder is now always created next to the script, not in whatever directory the script was launched from. A relative `DOWNLOAD_FOLDER` (the default `output`) is resolved against the script's own directory, so running the script from a parent folder (e.g. `~/api-scripts`) no longer scatters an `output/` folder there. Absolute `DOWNLOAD_FOLDER` paths (e.g. an external drive) are still used exactly as given.

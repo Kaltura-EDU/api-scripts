@@ -10,6 +10,49 @@ from KalturaClient.Plugins.Core import (
 )
 from KalturaClient.Plugins.Audit import KalturaAuditTrailFilter
 
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 # === LOAD ENVIRONMENT VARIABLES ==============================================
 load_dotenv()
 
@@ -68,10 +111,11 @@ def _prompt_admin_secret():
 # === CREATE KALTURA SESSION ==================================================
 ADMIN_SECRET = _prompt_admin_secret()
 config = KalturaConfiguration()
+config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
 config.serviceUrl = SERVICE_URL
 client = KalturaClient(config)
 try:
-    ks = client.session.start(
+    ks = call_with_retry(client.session.start,
         ADMIN_SECRET, USER_ID, KalturaSessionType.ADMIN, PARTNER_ID,
         privileges=PRIVILEGES
     )
@@ -120,7 +164,7 @@ page_index = 1
 
 while True:
     pager.pageIndex = page_index
-    result = client.media.list(entry_filter, pager)
+    result = call_with_retry(client.media.list, entry_filter, pager)
     if not result.objects:
         break
     entries.extend(result.objects)
@@ -143,7 +187,7 @@ for entry in entries:
 
     audit_filter = KalturaAuditTrailFilter()
     audit_filter.entryIdEqual = entry_id
-    audit_logs = client.audit.auditTrail.list(audit_filter).objects
+    audit_logs = call_with_retry(client.audit.auditTrail.list, audit_filter).objects
 
     # Filter for valid replacements after the minimum delay
     MIN_DELAY_SECONDS = MIN_DELAY_MINUTES * 60

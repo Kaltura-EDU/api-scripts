@@ -21,6 +21,49 @@ from KalturaClient.Plugins.Core import (
     KalturaCategoryEntryFilter,
 )
 
+# ── Network retry ──────────────────────────────────────────────────────
+# KalturaClientException (timeouts, resets) is NOT a KalturaException, so
+# plain `except KalturaException` misses it. Knobs come from .env:
+# REQUEST_TIMEOUT, MAX_NETWORK_RETRIES, NETWORK_RETRY_DELAY.
+import os as _os
+import time as _time
+
+import requests as _requests
+from KalturaClient.exceptions import (
+    KalturaClientException as _KalturaClientException,
+)
+
+
+def _retry_env_int(name, default):
+    try:
+        return int((_os.getenv(name) or "").strip() or default)
+    except ValueError:
+        return default
+
+
+def call_with_retry(fn, *args, **kwargs):
+    """Call fn(*args, **kwargs), retrying with linear backoff on transient
+    network failures. Real API errors (KalturaException) are re-raised
+    untouched so callers can handle them."""
+    retries = _retry_env_int("MAX_NETWORK_RETRIES", 5)
+    delay = _retry_env_int("NETWORK_RETRY_DELAY", 5)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (
+            _KalturaClientException,
+            _requests.exceptions.RequestException,
+        ) as exc:
+            if attempt == retries:
+                raise
+            wait = delay * attempt
+            print(
+                f"    [network error: {exc}; retry "
+                f"{attempt}/{retries} in {wait}s]"
+            )
+            _time.sleep(wait)
+
+
 # load environment variables
 try:
     from dotenv import load_dotenv
@@ -68,12 +111,13 @@ def _prompt_admin_secret():
 ADMIN_SECRET = _prompt_admin_secret()
 
 config = KalturaConfiguration()
+config.requestTimeout = _retry_env_int("REQUEST_TIMEOUT", 120)
 config.serviceUrl = os.getenv("KALTURA_SERVICE_URL", "https://www.kaltura.com")
 config.partnerId = int(PARTNER_ID)
 client = KalturaClient(config)
 
 try:
-    ks = client.session.start(
+    ks = call_with_retry(client.session.start,
         ADMIN_SECRET,
         USER_ID,
         KalturaSessionType.ADMIN,
@@ -122,7 +166,7 @@ if USE_CATEGORY_NAME:
 
     cat_filter = KalturaCategoryFilter()
     cat_filter.fullNameEqual = CATEGORY_PATH_PREFIX + channel_name
-    cat_result = client.category.list(cat_filter)
+    cat_result = call_with_retry(client.category.list, cat_filter)
     cat_objs = getattr(cat_result, "objects", []) or []
     if not cat_objs:
         print(f"❌ No category found with full name '{CATEGORY_PATH_PREFIX + channel_name}'. Exiting.")
@@ -142,7 +186,7 @@ def entry_in_category(entry_id: str, category_id: str) -> bool:
     f = KalturaCategoryEntryFilter()
     f.categoryIdEqual = category_id
     f.entryIdEqual = entry_id
-    resp = client.categoryEntry.list(f)
+    resp = call_with_retry(client.categoryEntry.list, f)
     return getattr(resp, "totalCount", 0) > 0
 
 
@@ -150,14 +194,14 @@ def remove_from_category(entry_id: str, category_id: str) -> bool:
     f = KalturaCategoryEntryFilter()
     f.categoryIdEqual = category_id
     f.entryIdEqual = entry_id
-    status_resp = client.categoryEntry.list(f)
+    status_resp = call_with_retry(client.categoryEntry.list, f)
     is_active = getattr(status_resp, "totalCount", 0) > 0 and getattr(status_resp.objects[0].status, "value", None) == 2
     if not is_active:
         print(f"⚠️ Entry {entry_id} is not in an active state for category {category_id}. Skipping removal.")
         return True  # treat as success so we can attempt re-add below
     try:
         # note: SDK sometimes has argument order quirks; using names for clarity
-        client.categoryEntry.delete(entryId=entry_id, categoryId=category_id)
+        call_with_retry(client.categoryEntry.delete, entryId=entry_id, categoryId=category_id)
         return True
     except Exception as exc:
         # normalize error text
@@ -171,7 +215,7 @@ def add_to_category(entry_id: str, category_id: str) -> bool:
     assoc.categoryId = category_id
     assoc.entryId = entry_id
     try:
-        client.categoryEntry.add(assoc)
+        call_with_retry(client.categoryEntry.add, assoc)
         return True
     except Exception as exc:
         print(f"⚠️ Could not re-add entry: {exc}")
