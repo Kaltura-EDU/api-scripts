@@ -16,3 +16,8 @@ venv/
 
 # Allow example env file
 !.env.example
+
+# Script input and output (real user data; this repo is public)
+input/*
+!input/.gitkeep
+output/

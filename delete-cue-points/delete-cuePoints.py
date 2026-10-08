@@ -124,6 +124,9 @@ def get_kaltura_client(partner_id, admin_secret):
 
 
 def generate_csv(filename, headers, rows):
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+    os.makedirs(output_dir, exist_ok=True)
+    filename = os.path.join(output_dir, filename)
     with open(filename, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerow(headers)

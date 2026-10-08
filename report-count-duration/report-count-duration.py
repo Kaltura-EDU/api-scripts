@@ -476,6 +476,11 @@ if EXPORT_CSV:
         f"{interval_label}.csv"
     )
 
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+    os.makedirs(output_dir, exist_ok=True)
+    summary_filename = os.path.join(output_dir, summary_filename)
+    details_filename = os.path.join(output_dir, details_filename)
+
     with open(summary_filename, "w", newline="") as f:
         writer = csv.DictWriter(
             f,

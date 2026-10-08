@@ -274,7 +274,9 @@ if __name__ == "__main__":
     formatted_time = current_time.strftime('%Y-%m-%d-%H%M')
 
     # Create the CSV filename
-    csv_filename = f"{formatted_time}_captionUpdates.csv"
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+    os.makedirs(output_dir, exist_ok=True)
+    csv_filename = os.path.join(output_dir, f"{formatted_time}_captionUpdates.csv")
 
     # Open CSV file to write the output
     with open(csv_filename, mode='w', newline='') as csv_file:

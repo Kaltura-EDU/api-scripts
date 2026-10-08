@@ -226,7 +226,9 @@ for entry in entries:
 # === EXPORT TO EXCEL WITH MULTIPLE SHEETS ====================================
 
 timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
-filename = f"{timestamp}_ReplacementsAudit.xlsx"
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+filename = os.path.join(OUTPUT_DIR, f"{timestamp}_ReplacementsAudit.xlsx")
 
 # Prepare the main results DataFrame
 columns = ["entry_id", "title", "creator_id", "owner_id", "created_at"]

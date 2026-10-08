@@ -47,7 +47,7 @@ python3 duplicate-playlists.py
 4. When prompted, enter your Kaltura admin secret. The input will not be visible as you type.
 5. The script will display the number of playlists found in the source category and ask you to confirm before proceeding. Enter `y` to continue or any other key to abort.
 
-After the script runs, it will generate a CSV file in the same folder. This file summarizes the operation for each playlist, including:
+After the script runs, it will generate a CSV file in the `output/` folder next to the script. This file summarizes the operation for each playlist, including:
 
 - The original playlist ID and name
 - The new (duplicated) playlist ID
@@ -58,3 +58,8 @@ Senior Education Technology Specialist
 UC San Diego  
 Created: 7 July 2025  
 Last updated: 1 July 2026
+
+## Input and output
+
+- **Output:** the results CSV is saved in the `output/` folder next to the script (created automatically), named like `YYYY-MM-DD-HHMM_<name>`.
+- Both folders are ignored by git, so your data never gets committed.

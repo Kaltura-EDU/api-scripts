@@ -1,0 +1,24 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment files
+.env
+.env.local
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# Script input and output (real user data; this repo is public)
+input/*
+!input/.gitkeep
+output/
+*.csv
+
+# IDE and OS metadata
+.vscode/
+.DS_Store

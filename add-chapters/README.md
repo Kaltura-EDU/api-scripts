@@ -27,7 +27,7 @@ Clone or download this repository to your computer. You can either:
    - Edit `.env` to include your Partner ID, User ID and CSV filename. The admin secret is not stored in `.env`; the script asks for it each time it runs.
 
 ## CSV Format
-Your `chapter_input.csv` must contain a header row with these fields:
+Your `chapter_input.csv` (saved in the `input/` folder) must contain a header row with these fields:
 
 ```
 entry_id,timecode,chapter_title,chapter_description,search_tags
@@ -49,3 +49,8 @@ Each chapter will be added as a `KalturaThumbCuePoint` with subtype `CHAPTER`.
 
 - The script loads credentials from `.env`. Do not commit `.env` to version control.
 - A `.gitignore` file should exclude `.env`, `venv/`, and `__pycache__/`.
+
+## Input and output
+
+- **Input:** put your CSV in the `input/` folder next to the script and set `CSV_FILENAME` in `.env` to its filename (for example `my-list.csv`).
+- Both folders are ignored by git, so your data never gets committed.

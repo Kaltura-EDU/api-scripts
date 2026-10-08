@@ -261,7 +261,9 @@ call_with_retry(client.metadata.metadata.update, destination_metadata.id, update
 
 # Output CSV
 timestamp = datetime.now().strftime("%Y-%m-%d-%H%M")
-csv_filename = f"{timestamp}_duplicate-playlists.csv"
+output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+os.makedirs(output_dir, exist_ok=True)
+csv_filename = os.path.join(output_dir, f"{timestamp}_duplicate-playlists.csv")
 with open(csv_filename, "w", newline="") as csvfile:
     writer = csv.writer(csvfile)
     writer.writerow([

@@ -237,7 +237,9 @@ def main():
     # Prepare CSV output
     now = datetime.now()
     timestamp_str = now.strftime("%Y-%m-%d-%H%M")
-    csv_filename = f"{timestamp_str}_EntriesRenamed.csv"
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+    os.makedirs(output_dir, exist_ok=True)
+    csv_filename = os.path.join(output_dir, f"{timestamp_str}_EntriesRenamed.csv")
 
     with open(csv_filename, mode='w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)

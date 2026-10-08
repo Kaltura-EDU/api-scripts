@@ -65,6 +65,23 @@ from KalturaClient.Plugins.Caption import (
     KalturaCaptionAssetFilter, KalturaCaptionAssetStatus,
 )
 
+# ── Input files ────────────────────────────────────────────────────────
+# Input files live in the input/ folder next to this script. A bare
+# filename, a leading "input/", or an absolute path all work.
+def resolve_input_path(name):
+    name = os.path.expanduser(str(name).strip())
+    if os.path.isabs(name):
+        return name
+    base = os.path.dirname(os.path.abspath(__file__))
+    norm = name.replace("\\", "/")
+    candidate = os.path.join(
+        base, name if norm.startswith("input/") else os.path.join("input", name)
+    )
+    if not os.path.exists(candidate) and os.path.exists(name):
+        return os.path.abspath(name)  # relative to where you launched it
+    return candidate
+
+
 # ── Network retry ──────────────────────────────────────────────────────
 # KalturaClientException (timeouts, resets) is NOT a KalturaException, so
 # plain `except KalturaException` misses it. Knobs come from .env:
@@ -274,9 +291,12 @@ def get_entries_by_tag(client, tags, rate_limiter):
 
 def get_entry_ids_from_csv(input_filename, column_header):
     """Returns a list of entry ID strings read from the configured CSV."""
-    input_path = Path(input_filename)
+    input_path = Path(resolve_input_path(input_filename))
     if not input_path.exists():
-        raise RuntimeError(f"Input CSV not found: {input_filename}")
+        raise RuntimeError(
+            f"Input CSV not found: {input_path}\n"
+            "Put your CSV in the input/ folder next to the script."
+        )
 
     with open(input_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)

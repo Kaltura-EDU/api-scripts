@@ -68,3 +68,9 @@ An entry can be `Y` on both columns — a regular caption and an EAD are separat
 
 - **No throttle-specific retry**: this script paces calls in advance via `AUDIT_RATE_PER_SEC`, but doesn't detect or specifically retry a Kaltura throttle response (`ACTION_BLOCKED`). It only makes read-only `get`/`list` calls, which may not be throttled the same way mutating actions (like recycling or deleting an entry) are.
 - **Title lookup cost varies by input method**: tag-search results already include the title (no extra API call); CSV and typed-entry-ID input only have the ID, so each of those costs one extra `baseEntry.get` call per entry.
+
+## Input and output
+
+- **Input:** put your CSV in the `input/` folder next to the script and set `INPUT_FILENAME` in `.env` to its filename (for example `my-list.csv`).
+- **Output:** a results CSV is saved in the `output/` folder next to the script (created automatically), named like `YYYY-MM-DD-HHMM_<name>`.
+- Both folders are ignored by git, so your data never gets committed.

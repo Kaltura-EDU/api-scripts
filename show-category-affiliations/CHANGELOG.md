@@ -2,6 +2,10 @@
 
 This changelog was started on 2026-08-20; earlier versions of the script predate it and are not documented here.
 
+## [1.1.1] - 2026-10-08
+### Changed
+- Output now goes to the `output/` folder next to the script (created automatically), not the launch folder: the affiliation CSVs.
+
 ## [1.1.0] - 2026-10-08
 ### Changed
 - Every Kaltura API call now goes through a `call_with_retry` helper: transient network errors (timeouts, connection resets) are retried with a growing delay instead of ending the run, while real API errors still surface normally. Tune with `REQUEST_TIMEOUT` (default 120), `MAX_NETWORK_RETRIES` (default 5) and `NETWORK_RETRY_DELAY` (default 5) in `.env`; see `.env.example`.

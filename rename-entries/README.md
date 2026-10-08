@@ -19,3 +19,8 @@ This script allows you to rename Kaltura media entries in batches. You can add s
 Galen Davis, Senior Education Technology Specialist
 UC San Diego
 29 January 2025
+
+## Input and output
+
+- **Output:** the results CSV is saved in the `output/` folder next to the script (created automatically), named like `YYYY-MM-DD-HHMM_<name>`.
+- Both folders are ignored by git, so your data never gets committed.

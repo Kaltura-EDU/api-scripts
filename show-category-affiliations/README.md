@@ -33,3 +33,8 @@ Mac: `source venv/bin/activate`
 Galen Davis, Senior Education Technology Specialist  
 UC San Diego  
 12 March 2025  
+
+## Input and output
+
+- **Output:** the affiliation CSVs is saved in the `output/` folder next to the script (created automatically), named like `YYYY-MM-DD-HHMM_<name>`.
+- Both folders are ignored by git, so your data never gets committed.

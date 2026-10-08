@@ -131,3 +131,8 @@ python3 audit-replacements.py
 - Only entries that have one or more replacement events (defined as `media::updatecontent`) **after** creation and beyond the configured delay will appear in the spreadsheet.
 - This script depends on the Kaltura **Audit Trail** module, which must be enabled in your environment.
 - The Audit Trail only tracks actions from the time it was activated onward; historical data is not backfilled.
+
+## Input and output
+
+- **Output:** the Excel report is saved in the `output/` folder next to the script (created automatically), named like `YYYY-MM-DD-HHMM_<name>`.
+- Both folders are ignored by git, so your data never gets committed.

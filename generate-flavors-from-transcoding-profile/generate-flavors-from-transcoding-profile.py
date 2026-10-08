@@ -35,6 +35,23 @@ from KalturaClient.Plugins.Core import (
 )
 from KalturaClient.exceptions import KalturaException
 
+# ── Input files ────────────────────────────────────────────────────────
+# Input files live in the input/ folder next to this script. A bare
+# filename, a leading "input/", or an absolute path all work.
+def resolve_input_path(name):
+    name = os.path.expanduser(str(name).strip())
+    if os.path.isabs(name):
+        return name
+    base = os.path.dirname(os.path.abspath(__file__))
+    norm = name.replace("\\", "/")
+    candidate = os.path.join(
+        base, name if norm.startswith("input/") else os.path.join("input", name)
+    )
+    if not os.path.exists(candidate) and os.path.exists(name):
+        return os.path.abspath(name)  # relative to where you launched it
+    return candidate
+
+
 # ── Network retry ──────────────────────────────────────────────────────
 # KalturaClientException (timeouts, resets) is NOT a KalturaException, so
 # plain `except KalturaException` misses it. Knobs come from .env:
@@ -231,7 +248,7 @@ def load_entry_ids_from_csv() -> List[str]:
     if not CSV_FILENAME or not ENTRY_ID_COLUMN_HEADER:
         return []
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(script_dir, CSV_FILENAME)
+    csv_path = resolve_input_path(CSV_FILENAME)
     entry_ids = []
     try:
         with open(csv_path, "r", encoding="utf-8-sig") as f:

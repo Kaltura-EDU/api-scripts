@@ -51,3 +51,8 @@ Your admin secret is **not** stored in `.env` — you will be prompted for it se
 
 Galen Davis  
 Senior Education Technology Specialist, UC San Diego
+
+## Input and output
+
+- **Output:** a results CSV is saved in the `output/` folder next to the script (created automatically), named like `YYYY-MM-DD-HHMM_<name>`.
+- Both folders are ignored by git, so your data never gets committed.

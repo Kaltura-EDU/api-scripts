@@ -2,7 +2,6 @@
 .env
 
 # Input CSVs may contain student enrollment data (FERPA)
-input/
 
 # Output CSVs contain PII and are large; share separately if needed
 output/
@@ -19,3 +18,7 @@ venv/
 
 # Archives
 *.zip
+
+# Script input (real user data; this repo is public)
+input/*
+!input/.gitkeep

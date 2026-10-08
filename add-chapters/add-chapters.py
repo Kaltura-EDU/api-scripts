@@ -8,6 +8,23 @@ from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import KalturaSessionType
 from KalturaClient.Plugins.ThumbCuePoint import KalturaThumbCuePoint
 
+# ── Input files ────────────────────────────────────────────────────────
+# Input files live in the input/ folder next to this script. A bare
+# filename, a leading "input/", or an absolute path all work.
+def resolve_input_path(name):
+    name = os.path.expanduser(str(name).strip())
+    if os.path.isabs(name):
+        return name
+    base = os.path.dirname(os.path.abspath(__file__))
+    norm = name.replace("\\", "/")
+    candidate = os.path.join(
+        base, name if norm.startswith("input/") else os.path.join("input", name)
+    )
+    if not os.path.exists(candidate) and os.path.exists(name):
+        return os.path.abspath(name)  # relative to where you launched it
+    return candidate
+
+
 # ── Network retry ──────────────────────────────────────────────────────
 # KalturaClientException (timeouts, resets) is NOT a KalturaException, so
 # plain `except KalturaException` misses it. Knobs come from .env:
@@ -121,7 +138,7 @@ def timecode_to_milliseconds(timecode):
 
 # READ CSV AND PROCESS CHAPTERS ===============================================
 try:
-    with open(CSV_FILENAME, mode='r', encoding='utf-8-sig') as file:
+    with open(resolve_input_path(CSV_FILENAME), mode='r', encoding='utf-8-sig') as file:
         reader = csv.DictReader(file)
         expected_headers = ["entry_id", "timecode", "chapter_title", "chapter_description", "search_tags"]
 
@@ -163,5 +180,8 @@ try:
                 print(f"ERROR adding chapter for entry {entry_id}: {e}")
 
 except FileNotFoundError:
-    print(f"ERROR: File '{CSV_FILENAME}' not found.")
+    print(
+        f"ERROR: File not found: {resolve_input_path(CSV_FILENAME)}\n"
+        "Put your CSV in the input/ folder next to the script."
+    )
     sys.exit(1)

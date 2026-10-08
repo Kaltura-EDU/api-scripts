@@ -27,3 +27,8 @@ ENV/
 
 # VSCode settings
 .vscode/
+
+# Script input and output (real user data; this repo is public)
+input/*
+!input/.gitkeep
+output/

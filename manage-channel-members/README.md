@@ -118,3 +118,9 @@ A timestamped report CSV is written to `output/`:
 ## Performance note
 
 Before processing begins, the script fetches the full member list for every unique category in your input via `categoryUser.list` and builds an in-memory cache. This eliminates per-user API calls during processing, which is significantly faster when many rows share the same category. Cache building is also parallelized using `THREAD_COUNT` threads. Progress is reported throughout so you can track both phases.
+
+## Input and output
+
+- **Input:** put your CSV in the `input/` folder next to the script and set `INPUT_CSV_FILENAME` in `.env` to its filename (for example `my-list.csv`).
+- **Output:** its report CSV is saved in the `output/` folder next to the script (created automatically), named like `YYYY-MM-DD-HHMM_<name>`.
+- Both folders are ignored by git, so your data never gets committed.

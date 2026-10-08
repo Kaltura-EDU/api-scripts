@@ -70,6 +70,23 @@ from KalturaClient.Plugins.Core import (
     KalturaSessionType,
 )
 
+# ── Input files ────────────────────────────────────────────────────────
+# Input files live in the input/ folder next to this script. A bare
+# filename, a leading "input/", or an absolute path all work.
+def resolve_input_path(name):
+    name = os.path.expanduser(str(name).strip())
+    if os.path.isabs(name):
+        return name
+    base = os.path.dirname(os.path.abspath(__file__))
+    norm = name.replace("\\", "/")
+    candidate = os.path.join(
+        base, name if norm.startswith("input/") else os.path.join("input", name)
+    )
+    if not os.path.exists(candidate) and os.path.exists(name):
+        return os.path.abspath(name)  # relative to where you launched it
+    return candidate
+
+
 # ── Network retry ──────────────────────────────────────────────────────
 # KalturaClientException (timeouts, resets) is NOT a KalturaException, so
 # plain `except KalturaException` misses it. Knobs come from .env:
@@ -860,6 +877,8 @@ def main():
             )
             sys.exit(1)
 
+    courses_csv = resolve_input_path(courses_csv)
+    users_csv = resolve_input_path(users_csv)
     for path in (courses_csv, users_csv):
         if not os.path.exists(path):
             print(f"File not found: {path}")

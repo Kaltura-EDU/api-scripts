@@ -81,3 +81,9 @@ Same columns as the preview, plus:
 | `flavors_generated_count` | Number of flavor assets successfully queued |
 | `status` | `CONVERTED`, `PARTIAL`, `FAILED`, `SKIPPED_ALL_PRESENT`, or `ERROR` |
 | `error` | Error detail for any failed conversion calls |
+
+## Input and output
+
+- **Input:** put your CSV in the `input/` folder next to the script and set `CSV_FILENAME` in `.env` to its filename (for example `my-list.csv`).
+- **Output:** its result CSVs is saved in the `output/` folder next to the script (created automatically), named like `YYYY-MM-DD-HHMM_<name>`.
+- Both folders are ignored by git, so your data never gets committed.

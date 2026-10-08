@@ -145,3 +145,9 @@ The AI can identify exactly what needs to change and produce a working adapted v
 - The script sets the channel owner via `category.owner` at creation time. A separate `categoryUser.add` call is not made for the owner.
 - Entries published in InContext (embedded) subcategories are discovered via `ancestorIdIn` and included alongside main gallery entries. Duplicates across subcategories are deduplicated before publishing.
 - The state file (`output/.run_state.json`) stores only completed course IDs, not row data. All CSV output is written and flushed incrementally as each course completes.
+
+## Input and output
+
+- **Input:** put your CSV in the `input/` folder next to the script and set `COURSES_CSV_FILENAME` and `USERS_CSV_FILENAME` in `.env` to its filename (for example `my-list.csv`).
+- **Output:** its result files is saved in the `output/` folder next to the script (created automatically), named like `YYYY-MM-DD-HHMM_<name>`.
+- Both folders are ignored by git, so your data never gets committed.

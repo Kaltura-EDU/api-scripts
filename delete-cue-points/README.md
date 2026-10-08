@@ -36,3 +36,8 @@ Systems Administrator, Learning Systems
 Baylor University  
 
 *Last updated 2025-05-05*
+
+## Input and output
+
+- **Output:** the CSV report is saved in the `output/` folder next to the script (created automatically), named like `YYYY-MM-DD-HHMM_<name>`.
+- Both folders are ignored by git, so your data never gets committed.

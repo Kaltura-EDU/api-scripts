@@ -128,3 +128,7 @@ output/
 *.bak
 *.tmp
 *.orig
+
+# Script input (real user data; this repo is public)
+input/*
+!input/.gitkeep

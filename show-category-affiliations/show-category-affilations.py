@@ -55,6 +55,8 @@ def call_with_retry(fn, *args, **kwargs):
 
 
 # CONFIGURABLE VARIABLES
+output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+os.makedirs(output_dir, exist_ok=True)
 CREATE_CSV_OUTPUT = True  # Set to False if you just want on-screen results
 AGGREGATE_CSV_OUTPUT = True  # Set to False if you want separate CSVs per user
 
@@ -177,7 +179,9 @@ for target_username in user_ids:
             all_memberships.extend(memberships)
         else:
             if memberships:  # Optional: skip empty CSVs
-                csv_filename = f"categoryAffiliations_{target_username}.csv"
+                csv_filename = os.path.join(
+                    output_dir, f"categoryAffiliations_{target_username}.csv"
+                )
                 fieldnames = [
                     "Username",
                     "Category ID",
@@ -196,7 +200,9 @@ for target_username in user_ids:
 
 # --- EXPORT AGGREGATE CSV IF ENABLED ---
 if CREATE_CSV_OUTPUT and AGGREGATE_CSV_OUTPUT:
-    csv_filename = "categoryAffiliations_multipleUsers.csv"
+    csv_filename = os.path.join(
+        output_dir, "categoryAffiliations_multipleUsers.csv"
+    )
     fieldnames = [
         "Username",
         "Category ID",

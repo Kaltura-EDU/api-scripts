@@ -2,7 +2,6 @@
 .env
 
 # Input/output may contain sensitive data
-input/
 output/
 
 # Python
@@ -13,3 +12,7 @@ venv/
 
 # macOS
 .DS_Store
+
+# Script input (real user data; this repo is public)
+input/*
+!input/.gitkeep

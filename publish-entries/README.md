@@ -80,3 +80,9 @@ A timestamped report CSV is written to `output/`:
 | `STATUS_FILTER` | `error` | Value to match in `STATUS_COLUMN` |
 | `THREAD_COUNT` | `10` | Parallel publish requests (5–15 recommended) |
 | `MAX_RETRIES` | `4` | Total attempts per entry (1 = no retry) |
+
+## Input and output
+
+- **Input:** put your CSV in the `input/` folder next to the script and set `INPUT_CSV_FILENAME` in `.env` to its filename (for example `my-list.csv`).
+- **Output:** its report CSV is saved in the `output/` folder next to the script (created automatically), named like `YYYY-MM-DD-HHMM_<name>`.
+- Both folders are ignored by git, so your data never gets committed.

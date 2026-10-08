@@ -81,3 +81,7 @@ If your institution uses a different naming or folder structure, be sure to upda
 Author: Galen Davis
 Senior Education Technology Specialist, UC San Diego
 Updated 11/4/2025
+
+## Input and output
+
+- Both folders are ignored by git, so your data never gets committed.

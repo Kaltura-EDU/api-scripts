@@ -1,5 +1,8 @@
 .env
-input/
 output/
 __pycache__/
 *.pyc
+
+# Script input (real user data; this repo is public)
+input/*
+!input/.gitkeep
