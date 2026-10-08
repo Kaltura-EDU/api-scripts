@@ -76,7 +76,7 @@ except Exception:
 PARTNER_ID = os.getenv("PARTNER_ID", "")
 # The admin secret is never read from .env -- it is prompted at runtime.
 ADMIN_SECRET = ""
-USER_ID = os.getenv("USER_ID", "api-gbdavis")
+USER_ID = os.getenv("USER_ID", "api-user")
 PRIVILEGES = os.getenv("PRIVILEGES", "all:*,disableentitlement")
 USE_CATEGORY_NAME = os.getenv("USE_CATEGORY_NAME", "False").lower() in ("1", "true", "yes")
 CATEGORY_PATH_PREFIX = os.getenv("CATEGORY_PATH_PREFIX", "")
