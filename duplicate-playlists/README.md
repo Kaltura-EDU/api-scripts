@@ -9,7 +9,7 @@ This script duplicates all Kaltura playlists that are associated with a particul
 
 4. Open a Terminal window and navigate to the folder in which the script is stored, e.g.
 ```bash
-cd /Users/username/Documents/kalturaAPI/duplicate-playlists
+cd ~/Documents/GitHub/api-scripts/duplicate-playlists
 ```
 5. Create a virtual environment:
 ```bash
@@ -34,7 +34,7 @@ If both variables in a pair are set, the script will exit with an error. If a na
 
 1. From the terminal, navigate to the script's folder, e.g.
 ```bash
-cd /Users/username/Documents/kalturaAPI/duplicate-playlists
+cd ~/Documents/GitHub/api-scripts/duplicate-playlists
 ```
 2. If needed, activate your virtual environment:
 ```bash
