@@ -1,0 +1,11 @@
+[
+  {"id":"content","name":"Content inventory","mode":"read","description":"List and inspect media entries.","operations":"baseEntry.list, baseEntry.get, media.list, media.get","permissions":["CONTENT_MANAGE_BASE"]},
+  {"id":"captions","name":"Caption search","mode":"read","description":"Find caption assets for entries.","operations":"caption_captionasset.list","permissions":["CONTENT_MANAGE_BASE","CAPTION_SEARCH"]},
+  {"id":"analytics","name":"Analytics reports","mode":"read","description":"Read usage and engagement reports.","operations":"report.getTable, report.getTotal, report.getGraphs","permissions":["ANALYTICS_BASE"]},
+  {"id":"search","name":"Advanced search","mode":"read","description":"Search media using eSearch.","operations":"eSearch.eSearch.searchEntry","permissions":["ESEARCH_READ_PERMISSION"]},
+  {"id":"playlists","name":"Read playlists","mode":"read","description":"List playlists and inspect their configuration.","operations":"playlist.list, playlist.get","permissions":["PLAYLIST_BASE"]},
+  {"id":"downloads","name":"Download media","mode":"read","description":"Retrieve download URLs for media assets.","operations":"baseEntry.get, flavorAsset.getUrl","permissions":["CONTENT_MANAGE_BASE","CONTENT_MANAGE_DOWNLOAD"]},
+  {"id":"rename","name":"Edit entry metadata","mode":"write","description":"Change entry names, descriptions, and tags.","operations":"baseEntry.get, baseEntry.update (name, description, tags)","permissions":["CONTENT_MANAGE_BASE","CONTENT_MANAGE_METADATA"]},
+  {"id":"caption-write","name":"Manage captions","mode":"delete","description":"Create, update, and delete caption assets. This permission includes deletion.","operations":"caption_captionAsset.add, caption_captionAsset.update, caption_captionAsset.delete","permissions":["CONTENT_MANAGE_BASE","CAPTION_SEARCH","CAPTION_MODIFY"]},
+  {"id":"delete","name":"Delete media entries","mode":"delete","description":"Permanently remove media entries.","operations":"baseEntry.get, baseEntry.delete","permissions":["CONTENT_MANAGE_BASE","CONTENT_MANAGE_DELETE"]}
+]

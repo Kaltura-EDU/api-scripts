@@ -1,0 +1,58 @@
+[
+  {
+    "id":"search-entries", "name":"Search entries", "mode":"read", "capability":"read", "source":"search-entries/search-entries.py",
+    "description":"Export media entries filtered by tag, owner, category, and UTC creation dates.",
+    "permissions":["BASE_USER_SESSION_PERMISSION","CONTENT_MANAGE_BASE"], "api_actions":[["media","list"]],
+    "input_columns":[], "sample_row":[],
+    "notes":"Uses core media.list, without the reference script's optional bulk-export jobs. Narrow the date window if the query reaches Kaltura's 10,000-match boundary."
+  },
+  {
+    "id":"count-duration", "name":"Count & duration report", "mode":"read", "capability":"read", "source":"report-count-duration/report-count-duration.py",
+    "description":"Export media entry details and summarize entry count and duration for a filtered date range.",
+    "permissions":["BASE_USER_SESSION_PERMISSION","CONTENT_MANAGE_BASE"], "api_actions":[["media","list"]],
+    "input_columns":[], "sample_row":[],
+    "notes":"This is an inventory calculation, so ANALYTICS_BASE is unnecessary. Optional source-filename URLs and flavor-size reporting are omitted to avoid download access. Dates are UTC; use multiple date windows for large collections."
+  },
+  {
+    "id":"audit-captions", "name":"Audit captions", "mode":"read", "capability":"read", "source":"audit-captions/audit-captions.py",
+    "description":"List captions, labels, languages, and formats for explicit entry IDs; record entries with no captions.",
+    "permissions":["BASE_USER_SESSION_PERMISSION","CONTENT_MANAGE_BASE","CAPTION_SEARCH"], "api_actions":[["caption_captionAsset","list"]],
+    "input_columns":["entry_id"], "sample_row":["1_REPLACE_ME"],
+    "notes":"Explicit CSV targets avoid account-wide discovery. CAPTION_SEARCH follows this project's scoped caption-read precedent; account-specific grants must be verified by the operator. No caption editing or deletion permission."
+  },
+  {
+    "id":"download-captions", "name":"Download captions", "mode":"read", "capability":"read", "source":"download-captions/download-captions.py",
+    "description":"Download caption files for explicit entry IDs, without modifying Kaltura content.",
+    "permissions":["BASE_USER_SESSION_PERMISSION","CONTENT_MANAGE_BASE","CAPTION_SEARCH"], "api_actions":[["caption_captionAsset","list"],["caption_captionAsset","getUrl"]],
+    "input_columns":["entry_id"], "sample_row":["1_REPLACE_ME"],
+    "notes":"Original files only; no caption creation, conversion, or category-descendant discovery. getUrl access must be verified on the target account; the runner stops on denial and never expands permissions."
+  },
+  {
+    "id":"download-media", "name":"Download original media", "mode":"read", "capability":"read", "source":"download-entries/download-entries.py",
+    "description":"Download ready original flavor files for explicit media entry IDs.",
+    "permissions":["BASE_USER_SESSION_PERMISSION","CONTENT_MANAGE_BASE","CONTENT_MANAGE_DOWNLOAD"], "api_actions":[["flavorAsset","list"],["flavorAsset","getUrl"]],
+    "input_columns":["entry_id"], "sample_row":["1_REPLACE_ME"],
+    "notes":"Media source flavors only; excludes documents, thumbnails, recursive category queries, and external media. No ingestion or mutation permissions."
+  },
+  {
+    "id":"rename-entries", "name":"Rename entries", "mode":"write", "capability":"write", "source":"rename-entries/rename-entries.py",
+    "description":"Change entry names from a reviewed CSV, checking the expected current name before each update.",
+    "permissions":["BASE_USER_SESSION_PERMISSION","CONTENT_MANAGE_BASE","CONTENT_MANAGE_METADATA"], "api_actions":[["baseEntry","get"],["baseEntry","update"]],
+    "input_columns":["entry_id","expected_name","new_name"], "sample_row":["1_REPLACE_ME","Current title","New title"],
+    "notes":"Updates only the name field. Kaltura's metadata permission covers other metadata fields too; the local action manifest does not narrow the server's entire metadata grant. No delete or ingestion permission."
+  },
+  {
+    "id":"caption-visibility", "name":"Set caption visibility", "mode":"write", "capability":"delete", "source":"update-caption-visibility/update-caption-visibility.py",
+    "description":"Show or hide specified caption assets, checking each asset's entry ID and expected label first.",
+    "permissions":["BASE_USER_SESSION_PERMISSION","CONTENT_MANAGE_BASE","CAPTION_SEARCH","CAPTION_MODIFY"], "api_actions":[["caption_captionAsset","list"],["caption_captionAsset","update"]],
+    "input_columns":["entry_id","caption_id","expected_label","display_on_player"], "sample_row":["1_REPLACE_ME","1_CAPTION_ID","English (auto-generated)","0"],
+    "notes":"The script only updates displayOnPlayer, but CAPTION_MODIFY also permits caption creation and deletion. This preset therefore appears in the delete-capable category. Kaltura does not expose a separate visibility-only permission in the consulted catalog."
+  },
+  {
+    "id":"delete-entries", "name":"Delete entries", "mode":"delete", "capability":"delete", "source":"delete-entries/delete-entries.py",
+    "description":"Delete explicit entry IDs after checking their expected names and requiring typed terminal confirmation.",
+    "permissions":["BASE_USER_SESSION_PERMISSION","CONTENT_MANAGE_BASE","CONTENT_MANAGE_DELETE"], "api_actions":[["baseEntry","get"],["baseEntry","delete"]],
+    "input_columns":["entry_id","expected_name"], "sample_row":["1_REPLACE_ME","Current title"],
+    "notes":"No metadata-edit grant is needed just to delete. This version omits the reference script's XML export and threaded processing; it logs each attempt, stops on failure, and never automatically retries writes."
+  }
+]
