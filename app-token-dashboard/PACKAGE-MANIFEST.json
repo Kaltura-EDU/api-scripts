@@ -1,0 +1,24 @@
+{
+  "package": "app-token-dashboard",
+  "files": {
+    ".gitattributes": "b4f6a231d58c5288841af3db420de135bf959180b8adafde288abadc5ab0be50",
+    ".gitignore": "de2d7ce5fdd256d67de0db6021ed5406daca18305f27b583988ad8e6689101c6",
+    "CONTRIBUTING.md": "a8ff5e9101cd420dcaa9e9db75da7960c40430a91704cdb4eed860d3713deb49",
+    "README.md": "3ec864561be0e197141e8c9daebcf377797d9894cb223ed4c8fb8ba614b104ec",
+    "Start-KalturaAppTokens.cmd": "46ef0a983a38852af0acbf5d616b3ebeaf2e37fde57120f1145dfd448283d495",
+    "Start-KalturaAppTokens.command": "cca41860da8bc2beddb664f339813e4fd2082b4f7f653b9161fff181abd06280",
+    "app.js": "b75a9814446a0549a800e4443340220532d4313c2898c7ddcee47eaeaa6ef7e1",
+    "docs/reference-script-audit.md": "f77ff60d380ae7f5863c5e8a9118b65d8aa90179ea7e77c66ae6d68ba9f93b74",
+    "docs/scoped-tasks.md": "9c23055daf2834f6b29083efc411a81a26d40ae0ddb0a5408e10d5eb97839494",
+    "groups.json": "fef0a0dd298c60812db74d91dc13f54478f2944ccc4fdc84061a0e932bf677a3",
+    "index.html": "2d1d912cd5aaac4cd03cf65c72db6c450f357bec3dee7a068fd9d6fba0d6e788",
+    "permissions/kaltura-reference-catalog.txt": "787e4009c1579b32a8838bbd9a9138d3de8d131faa7323bd7fef406d039e3b0b",
+    "scripts/app_token_dashboard.py": "0d4d4a08c70aa7bee547405867bcc1eec0013841b80f5ed4d7ff97a6c0441b3e",
+    "scripts/create_scoped_app_token.py": "ed63ea1cc59ff0d8fd5d3a7c3fbf89dabff4e335e33b20733f1d04f8d3c159a2",
+    "scripts/scoped_task_runtime.py": "9e4eff8105b648ffd2fcf60272ce42f21bc72481b3816ff72c56c98b32d62c56",
+    "scripts/test_app_token_dashboard.py": "dc2c7c4a97a21d0dc634b4ea78f10854004dae48cb24c8dd4c9899118f9a9017",
+    "scripts/test_scoped_tasks.py": "ae5c1e87f2e8c03f36dd5bc2ef93be1dcf529f421422ccbbfa596956b5bbdaa3",
+    "style.css": "0cc5cdf710f32b898847734aa9036486886d8564c4ad934751e5108b3f8d7f95",
+    "tasks.json": "43ae3d0b24630a5d25feb258032ffebce30dd6f2428439ee7c6e423ab171423c"
+  }
+}
