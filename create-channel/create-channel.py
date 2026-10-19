@@ -1,6 +1,7 @@
 """
 Creates a new MediaSpace channel (Kaltura category) with specified
-properties. Optionally assigns members at time of creation.
+properties. Optionally assigns managers, moderators, contributors, and
+members at time of creation.
 """
 
 import getpass
@@ -32,6 +33,9 @@ PRIVACY_CONTEXT = os.getenv("PRIVACY_CONTEXT", "MediaSpace")
 CHANNEL_DESCRIPTION = os.getenv("CHANNEL_DESCRIPTION", "")
 CHANNEL_NAME = os.getenv("CHANNEL_NAME", "")
 OWNER = os.getenv("OWNER", "")
+MANAGERS = os.getenv("MANAGERS", "")
+MODERATORS = os.getenv("MODERATORS", "")
+CONTRIBUTORS = os.getenv("CONTRIBUTORS", "")
 MEMBERS = os.getenv("MEMBERS", "")
 
 CHANNEL_PRIVACY = int(os.getenv("CHANNEL_PRIVACY", 3))
@@ -41,6 +45,10 @@ INHERITANCE_TYPE = int(os.getenv("INHERITANCE_TYPE", 2))
 DEFAULT_PERMISSION_LEVEL = int(os.getenv("DEFAULT_PERMISSION_LEVEL", 3))
 CONTRIBUTION_POLICY = int(os.getenv("CONTRIBUTION_POLICY", 2))
 MODERATION = int(os.getenv("MODERATION", 0))
+
+
+def parse_users(raw):
+    return [u.strip() for u in raw.split(",") if u.strip()]
 
 
 def main():
@@ -99,31 +107,46 @@ def main():
         f"{created_category.id}"
     )
 
-    # Step 2: Add members if provided
-    member_list = (
-        [m.strip() for m in MEMBERS.split(",") if m.strip()]
-        if MEMBERS.strip() else []
-    )
+    # Step 2: Add users by permission level (highest level wins if a user
+    # is listed more than once)
+    levels = [
+        ("Managers", MANAGERS, KalturaCategoryUserPermissionLevel.MANAGER),
+        ("Moderators", MODERATORS, KalturaCategoryUserPermissionLevel.MODERATOR),
+        (
+            "Contributors",
+            CONTRIBUTORS,
+            KalturaCategoryUserPermissionLevel.CONTRIBUTOR,
+        ),
+        ("Members", MEMBERS, KalturaCategoryUserPermissionLevel.MEMBER),
+    ]
+    assigned = {OWNER} if OWNER else set()  # owner is already a manager
+    added = {}
 
-    for member in member_list:
-        category_user = KalturaCategoryUser()
-        category_user.categoryId = created_category.id
-        category_user.userId = member
-        category_user.permissionLevel = (
-            KalturaCategoryUserPermissionLevel.MEMBER
-        )
-        client.categoryUser.add(category_user)
-        print(f"Added member: {member} to channel {created_category.id}")
+    for label, raw, level in levels:
+        added[label] = []
+        for user in parse_users(raw):
+            if user in assigned:
+                print(f"Skipping {user} in {label}: already assigned.")
+                continue
+            category_user = KalturaCategoryUser()
+            category_user.categoryId = created_category.id
+            category_user.userId = user
+            category_user.permissionLevel = level
+            client.categoryUser.add(category_user)
+            assigned.add(user)
+            added[label].append(user)
+            print(
+                f"Added {label[:-1].lower()}: {user} to channel "
+                f"{created_category.id}"
+            )
 
     # Format and print output
     print("Channel created.\n-----------------")
     print(f"{'Channel Name:':20} {created_category.name}")
     print(f"{'Category ID:':20} {created_category.id}")
     print(f"{'Channel Owner:':20} {created_category.owner}")
-    print(
-        f"{'Channel Members:':20} "
-        f"{', '.join(member_list) if member_list else 'None'}"
-    )
+    for label, users in added.items():
+        print(f"{'Channel ' + label + ':':20} {', '.join(users) or 'None'}")
     print(f"{'Channel URL:':20} {channel_url}")
     print("Script execution complete.")
 

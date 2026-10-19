@@ -4,6 +4,12 @@ All notable changes to the `create-channel.py` script will be documented here.
 
 ---
 
+## [v1.4] - 2026-10-19
+### Added
+- `MANAGERS`, `MODERATORS`, and `CONTRIBUTORS` `.env` variables (comma-separated Kaltura user IDs) to assign those permission levels at creation, alongside `MEMBERS`. A user listed more than once gets the highest level; the owner is skipped.
+### Fixed
+- Corrected the documented setting values. `DEFAULT_PERMISSION_LEVEL` is 0=Manager, 1=Moderator, 2=Contributor, 3=Member (the old docs said 1=Contributor through 4=Manager). `CHANNEL_PRIVACY` is 1=Anyone, 2=Any logged-in user, 3=Channel members only. `USER_JOIN_POLICY` is 1=Join automatically, 2=Request to join, 3=Not allowed. `APPEAR_IN_LIST` has no `2` option. The defaults were always correct.
+
 ## [v1.3] - 2026-06-30
 ### Changed
 - Admin secret is now entered at runtime via a secure `getpass` prompt instead of being stored in `.env`.
