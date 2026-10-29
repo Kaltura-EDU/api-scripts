@@ -1,0 +1,4 @@
+KalturaApiClient
+python-dotenv
+requests
+pytz

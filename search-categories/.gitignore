@@ -1,0 +1,14 @@
+# Secrets & environment-specific config — never commit
+.env
+
+# Generated reports — contain real category names, owners and member counts
+output/
+*.csv
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
