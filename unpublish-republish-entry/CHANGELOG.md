@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.2] - 2026-10-30
+### Fixed
+- `CATEGORY_ID` in `.env` is now actually read; previously the script ignored it and always prompted for a category ID. Set `USE_CATEGORY_NAME=True` to use the channel-name lookup instead.
+
 ## [1.2.1] - 2026-10-08
 ### Changed
 - The default `USER_ID` is now the neutral `api-user` instead of a personal account name; set your own in `.env`.

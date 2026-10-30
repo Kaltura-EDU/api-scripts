@@ -81,6 +81,7 @@ PRIVILEGES = os.getenv("PRIVILEGES", "all:*,disableentitlement")
 USE_CATEGORY_NAME = os.getenv("USE_CATEGORY_NAME", "False").lower() in ("1", "true", "yes")
 CATEGORY_PATH_PREFIX = os.getenv("CATEGORY_PATH_PREFIX", "")
 CHANNEL_NAME_ENV = os.getenv("CHANNEL_NAME", "").strip()
+CATEGORY_ID_ENV = os.getenv("CATEGORY_ID", "").strip()
 
 # Allow comma-separated entry list via env: ENTRY_IDS="1_foo,1_bar"
 ENV_ENTRY_IDS = os.getenv("ENTRY_IDS", "").strip()
@@ -154,7 +155,10 @@ if not entry_ids:
     print("❌ No entry IDs provided. Exiting.")
     sys.exit(1)
 
-if USE_CATEGORY_NAME:
+if CATEGORY_ID_ENV and not USE_CATEGORY_NAME:
+    category_id = CATEGORY_ID_ENV
+    print(f"✅ Using category ID from .env: {category_id}")
+elif USE_CATEGORY_NAME:
     if not CATEGORY_PATH_PREFIX:
         print("❌ CATEGORY_PATH_PREFIX must be set when USE_CATEGORY_NAME is True. Exiting.")
         sys.exit(1)
