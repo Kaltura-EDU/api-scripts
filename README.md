@@ -40,11 +40,14 @@ You may need to periodically install new modules as needed.
 
 Some scripts on this site may require you to find your *admin secret*. It's a private key used to authenticate API requests with administrative privileges. It allows a script or application to perform actions on behalf of an account, such as managing media, users, or settings. Admin secrets should always be kept confidential to prevent unauthorized access. Here's how to find yours:
 
-1. Go to https://developer.kaltura.com.
-2. Click the **Sign in** button at the top of the page.
-3. Enter the same credentials you use for the KMC.
-4. If applicable, select the approprite partner ID (PID). 
-5. In the upper right corner of the page, click the pull down menu that shows your client name and PID and select **View Secrets**.
+1. Log in to the KMC.
+2. Go to **Settings** > **Integration Settings**.
+3. Find the **Admin Secret** field. It shows only dots, so the secret is never visible on your screen.
+4. Click the **Copy** button next to it. You can then paste the secret into the script when it asks for it.
+
+Kaltura describes these steps in [Find Your Credentials](https://docs.kaltura.com/docs/getting-started/general/credentials-find).
+
+Don't save your admin secret in a file, such as a `.env` file. The scripts here ask for it each time you run them.
 
 -Galen Davis, Senior Ed Tech Specialist, UC San Diego
 27 January 2025
