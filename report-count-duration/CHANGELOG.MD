@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.7.2 – 4 November 2026
+### Changed
+- The Kaltura session is now closed (`session.end`) when the script exits, whether it finishes, hits an error, or you stop it with Ctrl+C. Before, the session stayed valid until it expired on its own, so a copied or leaked session key kept working. You'll see "Kaltura session closed." at the end.
+
 ## v1.7.1 – 8 October 2026
 ### Changed
 - Output now goes to the `output/` folder next to the script (created automatically), not the launch folder: the summary and details CSVs.

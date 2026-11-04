@@ -1,5 +1,9 @@
 # Changelog – recycle-entries.py
 
+## [v1.1.1] – 2026-11-04
+### Changed
+- The Kaltura session is now closed (`session.end`) when the script exits, whether it finishes, hits an error, or you stop it with Ctrl+C. Before, the session stayed valid until it expired on its own, so a copied or leaked session key kept working. You'll see "Kaltura session closed." at the end.
+
 ## [v1.1.0] – 2026-10-08
 ### Changed
 - Every Kaltura API call now goes through a `call_with_retry` helper: transient network errors (timeouts, connection resets) are retried with a growing delay instead of ending the run, while real API errors still surface normally. Tune with `REQUEST_TIMEOUT` (default 120), `MAX_NETWORK_RETRIES` (default 5) and `NETWORK_RETRY_DELAY` (default 5) in `.env`; see `.env.example`.

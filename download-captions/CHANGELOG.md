@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.9.1] - 2026-11-04
+### Changed
+- The Kaltura session is now closed (`session.end`) when the script exits, whether it finishes, hits an error, or you stop it with Ctrl+C. Before, the session stayed valid until it expired on its own, so a copied or leaked session key kept working. You'll see "Kaltura session closed." at the end.
+
 ## [1.9.0] - 2026-09-11
 ### Added
 - New `SUBFOLDER_PER_FILE_TYPE` toggle (default false): sorts output by type into `captions/`, `transcripts/`, and `audio-descriptions/` subfolders, so caption files, TXT transcripts, and audio descriptions no longer have to be separated by extension after the fact. Composes with `SUBFOLDER_PER_SEARCH_TERM` (the type folders nest inside each search-term folder). In `txt`-only mode the caption's original is staged in `transcripts/` and removed after conversion, so no empty `captions/` folder is left behind; audio descriptions are never placed in `transcripts/` (they aren't converted).

@@ -8,6 +8,7 @@ Configuration is via a .env file or environment variables. See .env.example.
 """
 
 from __future__ import annotations
+import atexit
 import os
 import getpass
 import sys
@@ -32,6 +33,23 @@ import requests as _requests
 from KalturaClient.exceptions import (
     KalturaClientException as _KalturaClientException,
 )
+
+
+_ended_sessions = set()
+
+
+def _end_kaltura_session(client):
+    """Close the Kaltura session when the script exits, even after an error
+    or Ctrl+C, so a copied or leaked KS stops working. Safe to call twice."""
+    ks = client.getKs()
+    if not ks or ks in _ended_sessions:
+        return
+    _ended_sessions.add(ks)
+    try:
+        client.session.end()
+        print("Kaltura session closed.")
+    except Exception:
+        print("Note: could not close the Kaltura session; it will expire on its own.")
 
 
 def _retry_env_int(name, default):
@@ -154,6 +172,7 @@ except Exception as e:
         print(f"\n❌ Could not start Kaltura session: {e}\n")
     raise SystemExit(1)
 client.setKs(ks)
+atexit.register(_end_kaltura_session, client)
 
 # === INPUTS ===
 if ENV_ENTRY_IDS:

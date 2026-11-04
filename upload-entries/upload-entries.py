@@ -28,6 +28,7 @@ The admin secret is always prompted at runtime and never read from or written
 to disk. Fill in the rest of your configuration in .env (copy .env.example).
 """
 
+import atexit
 import csv
 import getpass
 import io
@@ -59,6 +60,23 @@ from KalturaClient.Plugins.Core import (
 from KalturaClient.exceptions import KalturaClientException, KalturaException
 
 load_dotenv(find_dotenv())
+
+
+_ended_sessions = set()
+
+
+def _end_kaltura_session(client):
+    """Close the Kaltura session when the script exits, even after an error
+    or Ctrl+C, so a copied or leaked KS stops working. Safe to call twice."""
+    ks = client.getKs()
+    if not ks or ks in _ended_sessions:
+        return
+    _ended_sessions.add(ks)
+    try:
+        client.session.end()
+        print("Kaltura session closed.")
+    except Exception:
+        print("Note: could not close the Kaltura session; it will expire on its own.")
 
 
 # ── Env helpers ───────────────────────────────────────────────────────
@@ -363,6 +381,7 @@ def create_client():
             print(f"\n❌ Could not start Kaltura session: {e}\n")
         raise SystemExit(1)
     c.setKs(ks)
+    atexit.register(_end_kaltura_session, c)
     return c
 
 

@@ -26,6 +26,7 @@ Author: Galen Davis
 Last updated: September 24, 2026 (v2.2.0)
 """
 
+import atexit
 import csv
 import getpass
 import os
@@ -65,6 +66,23 @@ from KalturaClient.exceptions import KalturaException, KalturaClientException
 
 # Load .env alongside this script, not relying on current working directory
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"), override=False)
+
+
+_ended_sessions = set()
+
+
+def _end_kaltura_session(client):
+    """Close the Kaltura session when the script exits, even after an error
+    or Ctrl+C, so a copied or leaked KS stops working. Safe to call twice."""
+    ks = client.getKs()
+    if not ks or ks in _ended_sessions:
+        return
+    _ended_sessions.add(ks)
+    try:
+        client.session.end()
+        print("Kaltura session closed.")
+    except Exception:
+        print("Note: could not close the Kaltura session; it will expire on its own.")
 
 
 def _env_bool(key, default="false"):
@@ -226,6 +244,7 @@ def get_kaltura_client(partner_id, admin_secret):
             print(f"\n❌ Could not start Kaltura session: {e}\n")
         raise SystemExit(1)
     client.setKs(ks)
+    atexit.register(_end_kaltura_session, client)
     return client
 
 

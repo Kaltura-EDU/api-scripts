@@ -11,6 +11,7 @@ written to disk.
 Author: Galen Davis
 """
 
+import atexit
 import csv
 import getpass
 import os
@@ -48,6 +49,23 @@ ADMIN_SECRET = ""
 
 # ---------- Env helpers ----------
 CLEANED_VARS = []
+
+
+_ended_sessions = set()
+
+
+def _end_kaltura_session(client):
+    """Close the Kaltura session when the script exits, even after an error
+    or Ctrl+C, so a copied or leaked KS stops working. Safe to call twice."""
+    ks = client.getKs()
+    if not ks or ks in _ended_sessions:
+        return
+    _ended_sessions.add(ks)
+    try:
+        client.session.end()
+        print("Kaltura session closed.")
+    except Exception:
+        print("Note: could not close the Kaltura session; it will expire on its own.")
 
 
 def env_str(key, default=""):
@@ -253,6 +271,7 @@ def start_client(admin_secret):
             print(f"\n❌ Could not start Kaltura session: {e}\n")
         raise SystemExit(1)
     client.setKs(ks)
+    atexit.register(_end_kaltura_session, client)
     return client
 
 

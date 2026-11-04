@@ -32,6 +32,7 @@ Usage:
        To proceed with recycling, type "RECYCLE" when prompted.
 """
 
+import atexit
 import csv
 import getpass
 import html
@@ -57,6 +58,23 @@ from KalturaClient.exceptions import KalturaClientException
 # Env / config ----------------------------------------------------------------
 # =============================================================================
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
+
+
+_ended_sessions = set()
+
+
+def _end_kaltura_session(client):
+    """Close the Kaltura session when the script exits, even after an error
+    or Ctrl+C, so a copied or leaked KS stops working. Safe to call twice."""
+    ks = client.getKs()
+    if not ks or ks in _ended_sessions:
+        return
+    _ended_sessions.add(ks)
+    try:
+        client.session.end()
+        print("Kaltura session closed.")
+    except Exception:
+        print("Note: could not close the Kaltura session; it will expire on its own.")
 
 
 def require_env_int(name: str) -> int:
@@ -201,6 +219,7 @@ def build_client() -> KalturaClient:
             print(f"\n❌ Could not start Kaltura session: {e}\n")
         raise SystemExit(1)
     client.setKs(ks)
+    atexit.register(_end_kaltura_session, client)
     return client
 
 

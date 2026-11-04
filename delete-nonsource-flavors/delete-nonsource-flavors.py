@@ -19,6 +19,7 @@ README and .env.example). For security, the admin secret is NOT read from
   network timeouts and dropped connections are retried.
 """
 
+import atexit
 import csv
 import getpass
 import os
@@ -46,6 +47,23 @@ from KalturaClient.exceptions import KalturaClientException, KalturaException
 # =============================================================================
 # Load .env alongside this script, not relying on current working directory
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"), override=False)
+
+
+_ended_sessions = set()
+
+
+def _end_kaltura_session(client):
+    """Close the Kaltura session when the script exits, even after an error
+    or Ctrl+C, so a copied or leaked KS stops working. Safe to call twice."""
+    ks = client.getKs()
+    if not ks or ks in _ended_sessions:
+        return
+    _ended_sessions.add(ks)
+    try:
+        client.session.end()
+        print("Kaltura session closed.")
+    except Exception:
+        print("Note: could not close the Kaltura session; it will expire on its own.")
 
 
 def env_value(*names: str) -> str:
@@ -209,6 +227,7 @@ def get_thread_client() -> KalturaClient:
     if not hasattr(_thread_local, "client"):
         client = make_client()
         client.setKs(KS)
+        atexit.register(_end_kaltura_session, client)
         _thread_local.client = client
     return _thread_local.client
 
@@ -696,6 +715,10 @@ def main():
         print("Error: Admin secret cannot be empty.")
         sys.exit(2)
     KS = start_session(admin_secret)
+    # Close the shared session at exit, even if no worker thread ever started.
+    _main_client = make_client()
+    _main_client.setKs(KS)
+    atexit.register(_end_kaltura_session, _main_client)
 
     mode, values = choose_selection()
 

@@ -1,5 +1,9 @@
 # Changelog – audit-captions.py
 
+## [v1.2.2] – 2026-11-04
+### Changed
+- The Kaltura session is now closed (`session.end`) when the script exits, whether it finishes, hits an error, or you stop it with Ctrl+C. Before, the session stayed valid until it expired on its own, so a copied or leaked session key kept working. You'll see "Kaltura session closed." at the end.
+
 ## [v1.2.1] – 2026-10-08
 ### Changed
 - Input CSVs are now read from the `input/` folder next to the script (a bare filename in `.env`, a leading `input/`, or an absolute path all still work; a missing file prints the full path that was checked).

@@ -1,5 +1,10 @@
 ## Changelog for create-channels.py
 
+### [2.0.1] - 2026-11-04
+#### Changed
+
+* The Kaltura session is now closed (`session.end`) when the script exits, whether it finishes, hits an error, or you stop it with Ctrl+C. Before, the session stayed valid until it expired on its own, so a copied or leaked session key kept working. You'll see "Kaltura session closed." at the end.
+
 ### [2.0.0] - 2026-10-06
 
 #### Added

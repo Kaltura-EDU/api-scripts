@@ -2,6 +2,10 @@
 
 All notable changes to `update-caption-visibility.py` will be documented in this file.
 
+## [1.2.2] - 2026-11-04
+### Changed
+- The session is now closed on every way out of the script (finishing, choosing X, an invalid choice, an error, or Ctrl+C), not just at the normal end. You'll see "Kaltura session closed." at the end.
+
 ## [1.2.1] - 2026-10-08
 ### Changed
 - Output now goes to the `output/` folder next to the script (created automatically), not the launch folder: the results CSV.

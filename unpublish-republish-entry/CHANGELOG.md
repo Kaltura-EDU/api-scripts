@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.3.1] - 2026-11-04
+### Changed
+- The Kaltura session is now closed (`session.end`) when the script exits, whether it finishes, hits an error, or you stop it with Ctrl+C. Before, the session stayed valid until it expired on its own, so a copied or leaked session key kept working. You'll see "Kaltura session closed." at the end.
+
 ## [1.3.0] - 2026-11-04
 ### Changed
 - The category is now chosen by what `.env` contains instead of requiring `USE_CATEGORY_NAME`: if `CATEGORY_ID` is set it is used directly; otherwise, if `CHANNEL_NAME` (e.g. a Canvas course ID like `15712`) is set, the category is looked up by name; if neither is set, the script prompts. An explicit `USE_CATEGORY_NAME=True/False` still overrides this.

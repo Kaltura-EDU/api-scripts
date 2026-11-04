@@ -1,3 +1,4 @@
+import atexit
 import csv
 import re
 import sys
@@ -7,6 +8,23 @@ from dotenv import load_dotenv
 from KalturaClient import KalturaClient, KalturaConfiguration
 from KalturaClient.Plugins.Core import KalturaSessionType
 from KalturaClient.Plugins.ThumbCuePoint import KalturaThumbCuePoint
+
+_ended_sessions = set()
+
+
+def _end_kaltura_session(client):
+    """Close the Kaltura session when the script exits, even after an error
+    or Ctrl+C, so a copied or leaked KS stops working. Safe to call twice."""
+    ks = client.getKs()
+    if not ks or ks in _ended_sessions:
+        return
+    _ended_sessions.add(ks)
+    try:
+        client.session.end()
+        print("Kaltura session closed.")
+    except Exception:
+        print("Note: could not close the Kaltura session; it will expire on its own.")
+
 
 # ── Input files ────────────────────────────────────────────────────────
 # Input files live in the input/ folder next to this script. A bare
@@ -123,6 +141,7 @@ except Exception as e:
         print(f"\n❌ Could not start Kaltura session: {e}\n")
     raise SystemExit(1)
 client.setKs(ks)
+atexit.register(_end_kaltura_session, client)
 
 
 # VALIDATE TIMECODE FORMAT ====================================================

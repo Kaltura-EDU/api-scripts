@@ -1,5 +1,9 @@
 # Changelog – upload-entries.py
 
+## [v1.1.1] – 2026-11-04
+### Changed
+* The Kaltura session is now closed (`session.end`) when the script exits, whether it finishes, hits an error, or you stop it with Ctrl+C. Before, the session stayed valid until it expired on its own, so a copied or leaked session key kept working. You'll see "Kaltura session closed." at the end.
+
 ## [v1.1.0] – 2026-08-24
 ### Changed
 - **Throughput readout is now live and dynamic.** Replaced the previous per-file speed (a single MB/s figure printed only when each file finished, which showed nothing while a large file was mid-upload) with a single shared status line that refreshes about twice a second on its own thread: files actively uploading, bytes sent vs. total, percent, a rolling current MB/s, and files completed — e.g. `⬆ 3 uploading · 1.2 GB/3.5 GB (34%) · 148.3 MB/s · 2/8 done`. Bytes are reported to it as each chunk lands, so it works with any number of workers without garbling, and it's suppressed automatically when stdout isn't a terminal (piped/redirected output stays clean). Each file still logs its own average speed on completion, the CSV still records per-file speed, and the end-of-run "effective MB/s" total is unchanged.

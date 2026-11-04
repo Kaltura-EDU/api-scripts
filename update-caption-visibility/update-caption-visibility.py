@@ -16,6 +16,7 @@ The script performs the following steps:
 6. Logs the process and outputs results to a timestamped CSV file.
 """
 
+import atexit
 import csv
 import getpass
 import sys
@@ -45,6 +46,23 @@ import requests as _requests
 from KalturaClient.exceptions import (
     KalturaClientException as _KalturaClientException,
 )
+
+
+_ended_sessions = set()
+
+
+def _end_kaltura_session(client):
+    """Close the Kaltura session when the script exits, even after an error
+    or Ctrl+C, so a copied or leaked KS stops working. Safe to call twice."""
+    ks = client.getKs()
+    if not ks or ks in _ended_sessions:
+        return
+    _ended_sessions.add(ks)
+    try:
+        client.session.end()
+        print("Kaltura session closed.")
+    except Exception:
+        print("Note: could not close the Kaltura session; it will expire on its own.")
 
 
 def _retry_env_int(name, default):
@@ -119,6 +137,7 @@ except Exception as e:
         print(f"\n❌ Could not start Kaltura session: {e}\n")
     raise SystemExit(1)
 client.setKs(ks)
+atexit.register(_end_kaltura_session, client)
 
 
 def get_all_caption_assets(entry_id):
@@ -222,12 +241,10 @@ if __name__ == "__main__":
 
     if choice.upper() == "X":
         print("Exiting script.")
-        call_with_retry(client.session.end)
         sys.exit(0)
 
     if choice not in method_map:
         print("Invalid choice.")
-        call_with_retry(client.session.end)
         sys.exit(1)
 
     method, prompt = method_map[choice]
@@ -235,7 +252,6 @@ if __name__ == "__main__":
 
     if not identifier:
         print("You must provide a valid value.")
-        call_with_retry(client.session.end)
         sys.exit(1)
 
     entries = get_entries(method, identifier)
@@ -265,7 +281,6 @@ if __name__ == "__main__":
             ).strip().lower()
         if proceed != 'yes':
             print("Operation cancelled by the user.")
-            call_with_retry(client.session.end)
             sys.exit(0)
 
     # Get the current date and time in Pacific Time
@@ -319,5 +334,3 @@ if __name__ == "__main__":
         f"'{csv_filename}'."
         )
 
-    # End the session
-    call_with_retry(client.session.end)

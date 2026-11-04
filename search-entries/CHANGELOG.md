@@ -2,6 +2,10 @@
 
 This changelog was started on 2026-08-20; earlier versions of the script predate it and are not documented here.
 
+## [1.6.1] - 2026-11-04
+### Changed
+- The Kaltura session is now closed (`session.end`) when the script exits, whether it finishes, hits an error, or you stop it with Ctrl+C. Before, the session stayed valid until it expired on its own, so a copied or leaked session key kept working. You'll see "Kaltura session closed." at the end.
+
 ## [1.6.0] - 2026-10-07
 ### Changed
 - A blank `STATUS` now returns entries of any status (including `DELETED`, `ERROR_*`, `PENDING`, etc.) instead of only `READY`. Set `STATUS` to narrow it. If you relied on the old behavior, set `STATUS=READY`. Child entries use the same setting. The CSV already included a `status` column, so each row shows its status.

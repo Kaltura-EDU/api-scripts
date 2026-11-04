@@ -45,6 +45,8 @@ Some scripts on this site may require you to find your *admin secret*. It's a pr
 3. Find the **Admin Secret** field. It shows only dots, so the secret is never visible on your screen.
 4. Click the **Copy** button next to it. You can then paste the secret into the script when it asks for it.
 
+Why use the KMC? Kaltura's developer site has a **View Secrets** menu that shows the secret in plain text. If you run scripts again and again, you'll likely keep that page open the whole time, and anyone looking over your shoulder, or at your screen when you step away, could read it. The KMC keeps the secret hidden, and the **Copy** button lets you paste it without ever seeing it.
+
 Kaltura describes these steps in [Find Your Credentials](https://docs.kaltura.com/docs/getting-started/general/credentials-find).
 
 Don't save your admin secret in a file, such as a `.env` file. The scripts here ask for it each time you run them.

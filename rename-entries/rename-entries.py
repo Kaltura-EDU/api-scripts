@@ -8,8 +8,10 @@ Usage:
 Required modules: KalturaApiClient, lxml
 """
 
+import atexit
 import sys
 import csv
+import getpass
 from datetime import datetime
 from KalturaClient import KalturaClient
 from KalturaClient.Base import KalturaConfiguration
@@ -35,6 +37,23 @@ import requests as _requests
 from KalturaClient.exceptions import (
     KalturaClientException as _KalturaClientException,
 )
+
+
+_ended_sessions = set()
+
+
+def _end_kaltura_session(client):
+    """Close the Kaltura session when the script exits, even after an error
+    or Ctrl+C, so a copied or leaked KS stops working. Safe to call twice."""
+    ks = client.getKs()
+    if not ks or ks in _ended_sessions:
+        return
+    _ended_sessions.add(ks)
+    try:
+        client.session.end()
+        print("Kaltura session closed.")
+    except Exception:
+        print("Note: could not close the Kaltura session; it will expire on its own.")
 
 
 def _retry_env_int(name, default):
@@ -96,6 +115,7 @@ def get_kaltura_client(partner_id, admin_secret):
             print(f"\n❌ Could not start Kaltura session: {e}\n")
         raise SystemExit(1)
     client.setKs(ks)
+    atexit.register(_end_kaltura_session, client)
     return client
 
 
@@ -159,7 +179,7 @@ def get_entries_by_category(client, category_id):
 def main():
     # Prompt for PID and Admin Secret
     partner_id = input("Enter your Partner ID: ").strip()
-    admin_secret = input("Enter your Admin Secret: ").strip()
+    admin_secret = getpass.getpass("Enter your Admin Secret (hidden as you paste): ").strip()
     client = get_kaltura_client(partner_id, admin_secret)
 
     # Prompt the user for how they want to select entries
