@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.0] - 2026-11-04
+### Changed
+- The category is now chosen by what `.env` contains instead of requiring `USE_CATEGORY_NAME`: if `CATEGORY_ID` is set it is used directly; otherwise, if `CHANNEL_NAME` (e.g. a Canvas course ID like `15712`) is set, the category is looked up by name; if neither is set, the script prompts. An explicit `USE_CATEGORY_NAME=True/False` still overrides this.
+- `FULL_NAME_PREFIX` and `CANVAS_COURSE_ID` are accepted as older names for `CATEGORY_PATH_PREFIX` and `CHANNEL_NAME`.
+- README `.env` example and setting descriptions updated to match.
+
 ## [1.2.2] - 2026-10-30
 ### Fixed
 - `CATEGORY_ID` in `.env` is now actually read; previously the script ignored it and always prompted for a category ID. Set `USE_CATEGORY_NAME=True` to use the channel-name lookup instead.

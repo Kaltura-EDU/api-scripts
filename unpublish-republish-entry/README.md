@@ -19,12 +19,12 @@ Create a `.env` file in the same directory as the script with the following keys
 ```env
 PARTNER_ID=your_partner_id
 USER_ID=your_user_id
-USE_CATEGORY_NAME=True
 CATEGORY_PATH_PREFIX=Canvas_Prod>site>channels>
+CHANNEL_NAME=15712
 ENTRY_IDS=1_abcd1234,1_efgh5678
 ```
 
-- Set `USE_CATEGORY_NAME` to `True` to use course IDs (e.g., `15712`) or `False` to use the full category ID directly.
+- Set `CHANNEL_NAME` (e.g., a Canvas course ID like `15712`) to look the category up by name, or set `CATEGORY_ID` to use a category ID directly. If `CATEGORY_ID` is set it takes precedence. If neither is set, the script prompts.
 - `ENTRY_IDS` is a comma-delimited list of one or more Kaltura entry IDs to unpublish and republish.
 
 ## Requirements

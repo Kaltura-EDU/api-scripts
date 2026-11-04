@@ -78,10 +78,21 @@ PARTNER_ID = os.getenv("PARTNER_ID", "")
 ADMIN_SECRET = ""
 USER_ID = os.getenv("USER_ID", "api-user")
 PRIVILEGES = os.getenv("PRIVILEGES", "all:*,disableentitlement")
-USE_CATEGORY_NAME = os.getenv("USE_CATEGORY_NAME", "False").lower() in ("1", "true", "yes")
-CATEGORY_PATH_PREFIX = os.getenv("CATEGORY_PATH_PREFIX", "")
-CHANNEL_NAME_ENV = os.getenv("CHANNEL_NAME", "").strip()
 CATEGORY_ID_ENV = os.getenv("CATEGORY_ID", "").strip()
+# FULL_NAME_PREFIX / CANVAS_COURSE_ID are older names for the same settings.
+CATEGORY_PATH_PREFIX = (
+    os.getenv("CATEGORY_PATH_PREFIX") or os.getenv("FULL_NAME_PREFIX") or ""
+).strip()
+CHANNEL_NAME_ENV = (
+    os.getenv("CHANNEL_NAME") or os.getenv("CANVAS_COURSE_ID") or ""
+).strip()
+# A category ID wins if given; otherwise a channel name in .env is looked up.
+# An explicit USE_CATEGORY_NAME=True/False overrides this.
+_use_name_env = os.getenv("USE_CATEGORY_NAME", "").strip().lower()
+if _use_name_env:
+    USE_CATEGORY_NAME = _use_name_env in ("1", "true", "yes")
+else:
+    USE_CATEGORY_NAME = bool(CHANNEL_NAME_ENV) and not CATEGORY_ID_ENV
 
 # Allow comma-separated entry list via env: ENTRY_IDS="1_foo,1_bar"
 ENV_ENTRY_IDS = os.getenv("ENTRY_IDS", "").strip()
@@ -155,10 +166,7 @@ if not entry_ids:
     print("❌ No entry IDs provided. Exiting.")
     sys.exit(1)
 
-if CATEGORY_ID_ENV and not USE_CATEGORY_NAME:
-    category_id = CATEGORY_ID_ENV
-    print(f"✅ Using category ID from .env: {category_id}")
-elif USE_CATEGORY_NAME:
+if USE_CATEGORY_NAME:
     if not CATEGORY_PATH_PREFIX:
         print("❌ CATEGORY_PATH_PREFIX must be set when USE_CATEGORY_NAME is True. Exiting.")
         sys.exit(1)
@@ -178,7 +186,7 @@ elif USE_CATEGORY_NAME:
     category_id = str(cat_objs[0].id)
     print(f"✅ Found category ID: {category_id} for full name '{CATEGORY_PATH_PREFIX + channel_name}'")
 else:
-    category_id = input("Category ID: ").strip()
+    category_id = CATEGORY_ID_ENV or input("Category ID: ").strip()
     if not category_id:
         print("❌ No category ID provided. Exiting.")
         sys.exit(1)
