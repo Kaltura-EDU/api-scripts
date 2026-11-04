@@ -1,5 +1,4 @@
 KalturaApiClient
-python-dotenv
-pandas
-requests
 lxml
+python-dotenv
+requests

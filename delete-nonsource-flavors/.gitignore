@@ -128,3 +128,8 @@ reports/
 *.bak
 *.tmp
 *.orig
+
+# Input and output folders — contain real entry data
+input/*
+!input/.gitkeep
+output/
