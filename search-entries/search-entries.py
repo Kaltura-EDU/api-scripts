@@ -132,6 +132,13 @@ MAX_WORKERS = max(1, int(getenv("MAX_WORKERS", "10")))
 EXPORT_CSV = getenv("EXPORT_CSV", "True").strip().lower() in (
     "true", "1", "yes",
 )
+# When True, list every result in the terminal (ID, created date, owner,
+# duration, name), children indented under their parent. Independent of
+# EXPORT_CSV, so set EXPORT_CSV=False and PRINT_RESULTS=True to see results
+# on screen only.
+PRINT_RESULTS = getenv("PRINT_RESULTS", "False").strip().lower() in (
+    "true", "1", "yes",
+)
 # Subfolder the CSV is written into (created automatically if missing).
 OUTPUT_DIR = getenv("OUTPUT_DIR", "output")
 TIMEZONE = getenv("TIMEZONE", "US/Pacific")
@@ -858,6 +865,28 @@ def entry_to_row(entry, relationship="", parent_id="", children=None):
     }
 
 
+def print_results(rows):
+    """List every result in the terminal, one line each, with children
+    indented under their parent."""
+    print(f"\n{'─' * 40}\nResults ({len(rows):,} rows):\n")
+    if not rows:
+        print("  (none)")
+        return
+    print(
+        f"  {'ENTRY ID':<16}{'CREATED':<17}{'OWNER':<18}"
+        f"{'DURATION':>9}  NAME"
+    )
+    for r in rows:
+        secs = int(r["duration_sec"] or 0)
+        duration = f"{secs // 3600}:{secs % 3600 // 60:02d}:{secs % 60:02d}"
+        is_child = r["relationship"] == "child"
+        entry_id = ("  └ " if is_child else "") + str(r["entry_id"])
+        print(
+            f"  {entry_id:<16}{r['created_at'][:16]:<17}"
+            f"{str(r['owner_id'])[:17]:<18}{duration:>9}  {r['name']}"
+        )
+
+
 CSV_FIELDS = [
     # Most-used columns first.
     "created_at", "updated_at", "entry_id", "owner_id", "creator_id",
@@ -1117,6 +1146,9 @@ def main():
         print(f"{'Child entries:':<22}{len(children):>15,}")
         print(f"{'Child duration (hrs):':<22}{child_hours:>15,.2f}")
     print(f"{'CSV rows:':<22}{len(rows):>15,}")
+
+    if PRINT_RESULTS:
+        print_results(rows)
 
     # ── CSV export ────────────────────────────────────────────────────
     if EXPORT_CSV:

@@ -30,6 +30,14 @@ filters from `.env`. Results are written to
 configurable via `OUTPUT_DIR`, is created automatically). Set
 `EXPORT_CSV=False` to print the summary only, without writing a file.
 
+To see the results on screen, set `PRINT_RESULTS=True`. After the totals, the
+script lists every result on its own line (entry ID, created date, owner,
+duration, name), with child entries indented under their parent. It works
+independently of `EXPORT_CSV`: use `EXPORT_CSV=False` with
+`PRINT_RESULTS=True` for an on-screen-only search, or turn both on to get the
+listing and the file. Large searches scroll a long way, so the CSV is easier
+for those.
+
 Before searching, the script lists every filter that's set in `.env`, plus
 the date range and any defaults that affect results (like `STATUS` being
 any status when left blank). It lists them again with the final totals.

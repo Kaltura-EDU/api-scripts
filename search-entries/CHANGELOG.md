@@ -2,6 +2,10 @@
 
 This changelog was started on 2026-08-20; earlier versions of the script predate it and are not documented here.
 
+## [1.7.0] - 2026-11-04
+### Added
+- `PRINT_RESULTS` setting (default `False`). When `True`, every result is listed in the terminal after the totals: entry ID, created date, owner, duration and name, with child entries indented under their parent. It works independently of `EXPORT_CSV`, so `EXPORT_CSV=False` with `PRINT_RESULTS=True` shows results on screen only.
+
 ## [1.6.1] - 2026-11-04
 ### Changed
 - The Kaltura session is now closed (`session.end`) when the script exits, whether it finishes, hits an error, or you stop it with Ctrl+C. Before, the session stayed valid until it expired on its own, so a copied or leaked session key kept working. You'll see "Kaltura session closed." at the end.
